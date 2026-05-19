@@ -365,7 +365,7 @@ namespace CodeWalker.Rendering
         }
         public void ClearDepth(DeviceContext ctx)
         {
-            ctx.ClearDepthStencilView(depthviewOverride ?? depthview);
+            ctx.ClearDepthStencilView(depthviewOverride ?? depthview, DepthStencilClearFlags.Depth, 0.0f, 0);
         }
         public void SetDefaultRenderTarget(DeviceContext ctx)
         {
