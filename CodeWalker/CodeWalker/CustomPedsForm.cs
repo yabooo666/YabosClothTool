@@ -152,6 +152,7 @@ namespace CodeWalker
         {
 
             InitializeComponent();
+            AddExportPreviewButton();
 
             ComponentComboBoxes = new List<List<ComponentComboItem>>
             {
@@ -193,6 +194,445 @@ namespace CodeWalker
             autoRotateTimer = new System.Windows.Forms.Timer();
             autoRotateTimer.Interval = 16; // About 60 FPS
             autoRotateTimer.Tick += AutoRotateTimer_Tick;
+        }
+
+        private void AddExportPreviewButton()
+        {
+            if (ToolsPanel == null)
+            {
+                return;
+            }
+
+            if (ToolsPanel.Controls.Find("ExportPreviewButton", false).Length > 0)
+            {
+                return;
+            }
+
+            var exportPreviewButton = new System.Windows.Forms.Button();
+            exportPreviewButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            exportPreviewButton.Location = new System.Drawing.Point(ToolsPanel.Width - 99, 3);
+            exportPreviewButton.Name = "ExportPreviewButton";
+            exportPreviewButton.Size = new System.Drawing.Size(93, 23);
+            exportPreviewButton.TabIndex = 18;
+            exportPreviewButton.Text = "Export PNG";
+            exportPreviewButton.UseVisualStyleBackColor = true;
+            exportPreviewButton.Click += ExportPreviewButton_Click;
+
+            ToolsPanel.Controls.Add(exportPreviewButton);
+            exportPreviewButton.BringToFront();
+        }
+
+        private void ExportPreviewButton_Click(object sender, EventArgs e)
+        {
+            using (var saveFileDialog = new SaveFileDialog())
+            {
+                saveFileDialog.AddExtension = true;
+                saveFileDialog.DefaultExt = "png";
+                saveFileDialog.FileName = "preview.png";
+                saveFileDialog.Filter = "PNG image (*.png)|*.png";
+                saveFileDialog.OverwritePrompt = true;
+                saveFileDialog.Title = "Export preview PNG";
+
+                if (saveFileDialog.ShowDialog(this) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                try
+                {
+                    ExportCurrentPreviewPng(saveFileDialog.FileName);
+                    UpdateStatus("Exported preview PNG");
+                }
+                catch (Exception ex)
+                {
+                    LogError("Preview PNG export failed: " + ex);
+                    MessageBox.Show(this, "Unable to export preview PNG:\n" + ex.Message, "Export PNG", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
+
+        private void ExportCurrentPreviewPng(string filePath)
+        {
+            if (Renderer == null || Renderer.DXMan == null || Renderer.DXMan.device == null || Renderer.DXMan.context == null || Renderer.DXMan.backbuffer == null)
+            {
+                throw new InvalidOperationException("The 3D preview is not ready yet.");
+            }
+
+            var selectedDrawable = GetSelectedExportDrawable();
+            var selectedTexture = GetSelectedExportTexture(selectedDrawable);
+            if (selectedDrawable == null)
+            {
+                throw new InvalidOperationException("No selected drawable is available for export.");
+            }
+
+            var selectedPedComponentIndex = GetSelectedPedComponentIndex(selectedDrawable);
+            if (selectedPedComponentIndex < 0 && selectedTexture == null && liveTexturePath == null)
+            {
+                throw new InvalidOperationException("No texture is available for the selected drawable.");
+            }
+
+            var dxman = Renderer.DXMan;
+            var device = dxman.device;
+            var context = dxman.context;
+            var backbufferDesc = dxman.backbuffer.Description;
+            var exportSize = Math.Max(256, Math.Max(backbufferDesc.Width, backbufferDesc.Height));
+            Texture2D exportTexture = null;
+            Texture2D depthTexture = null;
+            Texture2D stagingTexture = null;
+            RenderTargetView exportTargetView = null;
+            DepthStencilView exportDepthView = null;
+
+            lock (Renderer.RenderSyncRoot)
+            {
+                if (backbufferDesc.Width <= 0 || backbufferDesc.Height <= 0)
+                {
+                    throw new InvalidOperationException("The 3D preview backbuffer has no image data.");
+                }
+
+                var cameraState = CaptureCameraState();
+                try
+                {
+                    var exportDesc = new Texture2DDescription
+                    {
+                        Width = exportSize,
+                        Height = exportSize,
+                        MipLevels = 1,
+                        ArraySize = 1,
+                        Format = SharpDX.DXGI.Format.R8G8B8A8_UNorm,
+                        SampleDescription = new SharpDX.DXGI.SampleDescription(1, 0),
+                        Usage = ResourceUsage.Default,
+                        BindFlags = BindFlags.RenderTarget,
+                        CpuAccessFlags = CpuAccessFlags.None,
+                        OptionFlags = ResourceOptionFlags.None
+                    };
+                    exportTexture = new Texture2D(device, exportDesc);
+                    exportTargetView = new RenderTargetView(device, exportTexture);
+
+                    depthTexture = new Texture2D(device, new Texture2DDescription
+                    {
+                        Width = exportSize,
+                        Height = exportSize,
+                        MipLevels = 1,
+                        ArraySize = 1,
+                        Format = SharpDX.DXGI.Format.D32_Float,
+                        SampleDescription = new SharpDX.DXGI.SampleDescription(1, 0),
+                        Usage = ResourceUsage.Default,
+                        BindFlags = BindFlags.DepthStencil,
+                        CpuAccessFlags = CpuAccessFlags.None,
+                        OptionFlags = ResourceOptionFlags.None
+                    });
+                    exportDepthView = new DepthStencilView(device, depthTexture);
+
+                    var viewport = new ViewportF(0.0f, 0.0f, exportSize, exportSize, 0.0f, 1.0f);
+                    dxman.SetRenderTargetOverride(exportTargetView, exportDepthView, viewport);
+
+                    var exportDrawable = selectedPedComponentIndex >= 0 ? SelectedPed.Drawables[selectedPedComponentIndex] : selectedDrawable;
+                    FrameExportCamera(exportDrawable, exportSize);
+                    Renderer.BeginRender(context);
+                    context.ClearRenderTargetView(exportTargetView, new Color(0, 0, 0, 0));
+                    context.ClearDepthStencilView(exportDepthView, DepthStencilClearFlags.Depth, 0.0f, 0);
+
+                    if (!RenderSelectedExportItem(selectedDrawable, selectedTexture, selectedPedComponentIndex))
+                    {
+                        throw new InvalidOperationException("The selected drawable is not ready to render yet. Wait for it to appear in the preview, then export again.");
+                    }
+
+                    Renderer.RenderQueued();
+                    Renderer.RenderFinalPass();
+                    Renderer.EndRender();
+
+                    var stagingDesc = exportDesc;
+                    stagingDesc.BindFlags = BindFlags.None;
+                    stagingDesc.CpuAccessFlags = CpuAccessFlags.Read;
+                    stagingDesc.Usage = ResourceUsage.Staging;
+
+                    stagingTexture = new Texture2D(device, stagingDesc);
+                    context.CopyResource(exportTexture, stagingTexture);
+                    SaveTextureToPng(context, stagingTexture, filePath);
+                }
+                finally
+                {
+                    dxman.ClearRenderTargetOverride();
+                    RestoreCameraState(cameraState);
+                    if (stagingTexture != null)
+                    {
+                        stagingTexture.Dispose();
+                    }
+                    if (exportDepthView != null)
+                    {
+                        exportDepthView.Dispose();
+                    }
+                    if (depthTexture != null)
+                    {
+                        depthTexture.Dispose();
+                    }
+                    if (exportTargetView != null)
+                    {
+                        exportTargetView.Dispose();
+                    }
+                    if (exportTexture != null)
+                    {
+                        exportTexture.Dispose();
+                    }
+                }
+            }
+        }
+
+        private int GetSelectedPedComponentIndex(Drawable selectedDrawable)
+        {
+            if (selectedDrawable == null || SelectedPed?.Drawables == null)
+            {
+                return -1;
+            }
+
+            for (int i = 0; i < SelectedPed.Drawables.Length; i++)
+            {
+                var pedDrawable = SelectedPed.Drawables[i];
+                if (pedDrawable == null)
+                {
+                    continue;
+                }
+                if (ReferenceEquals(pedDrawable, selectedDrawable) || pedDrawable.Name == selectedDrawable.Name)
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private bool RenderSelectedExportItem(Drawable selectedDrawable, TextureDictionary selectedTexture, int selectedPedComponentIndex)
+        {
+            if (selectedPedComponentIndex >= 0)
+            {
+                return RenderSelectedPedComponent(selectedPedComponentIndex, selectedTexture);
+            }
+
+            return RenderSelectedItem(selectedDrawable, selectedTexture, false);
+        }
+
+        private bool RenderSelectedPedComponent(int componentIndex, TextureDictionary fallbackTextureDictionary)
+        {
+            var drawable = SelectedPed.Drawables[componentIndex];
+            if (drawable == null)
+            {
+                return false;
+            }
+
+            var texture = SelectedPed.Textures[componentIndex];
+            if (texture == null && fallbackTextureDictionary?.Textures?.data_items?.Length > 0)
+            {
+                texture = fallbackTextureDictionary.Textures.data_items[0];
+            }
+            if (texture == null)
+            {
+                return false;
+            }
+
+            var ac = SelectedPed.AnimClip;
+            if (ac != null)
+            {
+                ac.EnableRootMotion = SelectedPed.EnableRootMotion;
+            }
+
+            if (SelectedPed.Skeleton != null)
+            {
+                if (drawable.Skeleton == null)
+                {
+                    drawable.Skeleton = SelectedPed.Skeleton;
+                }
+                else if (drawable.Skeleton != SelectedPed.Skeleton)
+                {
+                    var dskel = drawable.Skeleton;
+                    if (SelectedPed.Skeleton.Bones?.Items != null)
+                    {
+                        for (int b = 0; b < SelectedPed.Skeleton.Bones.Items.Length; b++)
+                        {
+                            var srcbone = SelectedPed.Skeleton.Bones.Items[b];
+                            var dstbone = srcbone;
+                            if (dskel.BonesMap.TryGetValue(srcbone.Tag, out dstbone))
+                            {
+                                if (srcbone == dstbone)
+                                {
+                                    break;
+                                }
+                                dskel.Bones.Items[dstbone.Index] = srcbone;
+                                dskel.BonesMap[srcbone.Tag] = srcbone;
+                            }
+                        }
+                        dskel.BonesSorted = SelectedPed.Skeleton.BonesSorted;
+                    }
+                }
+            }
+
+            var isProp = drawable.Name.StartsWith("p_");
+            return Renderer.RenderDrawable(
+                drawable,
+                null,
+                SelectedPed.RenderEntity,
+                0,
+                SelectedPed.Ytd?.TextureDict,
+                texture,
+                ac,
+                SelectedPed.Clothes[componentIndex],
+                SelectedPed.Expressions[componentIndex],
+                isProp,
+                true);
+        }
+
+        private Drawable GetSelectedExportDrawable()
+        {
+            var selectedDrawable = Renderer.SelDrawable;
+            if (selectedDrawable != null)
+            {
+                return selectedDrawable;
+            }
+
+            if (LoadedDrawables.Count == 1)
+            {
+                return LoadedDrawables.Values.FirstOrDefault();
+            }
+
+            return null;
+        }
+
+        private TextureDictionary GetSelectedExportTexture(Drawable selectedDrawable)
+        {
+            if (selectedDrawable == null)
+            {
+                return null;
+            }
+
+            TextureDictionary textureDictionary;
+            if (LoadedTextures.TryGetValue(selectedDrawable, out textureDictionary))
+            {
+                return textureDictionary;
+            }
+            if (SavedTextures.TryGetValue(selectedDrawable, out textureDictionary))
+            {
+                return textureDictionary;
+            }
+            if (LoadedDrawables.TryGetValue(selectedDrawable.Name, out var loadedDrawable) && LoadedTextures.TryGetValue(loadedDrawable, out textureDictionary))
+            {
+                return textureDictionary;
+            }
+            if (SavedDrawables.TryGetValue(selectedDrawable.Name, out var savedDrawable) && SavedTextures.TryGetValue(savedDrawable, out textureDictionary))
+            {
+                return textureDictionary;
+            }
+
+            return null;
+        }
+
+        private CameraExportState CaptureCameraState()
+        {
+            return new CameraExportState
+            {
+                FollowPosition = camera.FollowEntity.Position,
+                TargetDistance = camera.TargetDistance,
+                CurrentDistance = camera.CurrentDistance,
+                TargetRotation = camera.TargetRotation,
+                CurrentRotation = camera.CurrentRotation,
+                Width = camera.Width,
+                Height = camera.Height,
+                AspectRatio = camera.AspectRatio,
+                UpdateProj = camera.UpdateProj
+            };
+        }
+
+        private void RestoreCameraState(CameraExportState state)
+        {
+            camera.FollowEntity.Position = state.FollowPosition;
+            camera.TargetDistance = state.TargetDistance;
+            camera.CurrentDistance = state.CurrentDistance;
+            camera.TargetRotation = state.TargetRotation;
+            camera.CurrentRotation = state.CurrentRotation;
+            camera.Width = state.Width;
+            camera.Height = state.Height;
+            camera.AspectRatio = state.AspectRatio;
+            camera.UpdateProj = true;
+            camera.Update(0.0f);
+            camera.UpdateProj = state.UpdateProj;
+        }
+
+        private void FrameExportCamera(Drawable drawable, int exportSize)
+        {
+            var radius = Math.Max(0.05f, drawable.BoundingSphereRadius);
+            var distance = (float)(radius / Math.Tan(camera.FieldOfView * 0.5f)) * 1.35f;
+
+            camera.OnWindowResize(exportSize, exportSize);
+            camera.FollowEntity.Position = drawable.BoundingCenter;
+            camera.TargetDistance = distance;
+            camera.CurrentDistance = distance;
+            camera.TargetRotation = camera.CurrentRotation;
+            camera.UpdateProj = true;
+            camera.Update(0.0f);
+        }
+
+        private class CameraExportState
+        {
+            public Vector3 FollowPosition;
+            public float TargetDistance;
+            public float CurrentDistance;
+            public Vector3 TargetRotation;
+            public Vector3 CurrentRotation;
+            public float Width;
+            public float Height;
+            public float AspectRatio;
+            public bool UpdateProj;
+        }
+
+        private static void SaveTextureToPng(DeviceContext context, Texture2D texture, string filePath)
+        {
+            DataStream dataStream = null;
+            var textureDesc = texture.Description;
+            var dataBox = context.MapSubresource(texture, 0, 0, MapMode.Read, SharpDX.Direct3D11.MapFlags.None, out dataStream);
+
+            try
+            {
+                using (var imagingFactory = new SharpDX.WIC.ImagingFactory())
+                using (var bitmap = new SharpDX.WIC.Bitmap(
+                    imagingFactory,
+                    textureDesc.Width,
+                    textureDesc.Height,
+                    GetWicPixelFormat(textureDesc.Format),
+                    new DataRectangle(dataStream.DataPointer, dataBox.RowPitch)))
+                using (var outputStream = new FileStream(filePath, FileMode.Create, FileAccess.Write))
+                using (var bitmapEncoder = new SharpDX.WIC.PngBitmapEncoder(imagingFactory, outputStream))
+                using (var bitmapFrameEncode = new SharpDX.WIC.BitmapFrameEncode(bitmapEncoder))
+                {
+                    bitmapFrameEncode.Initialize();
+                    bitmapFrameEncode.SetSize(textureDesc.Width, textureDesc.Height);
+                    var pixelFormat = GetWicPixelFormat(textureDesc.Format);
+                    bitmapFrameEncode.SetPixelFormat(ref pixelFormat);
+                    bitmapFrameEncode.WriteSource(bitmap);
+                    bitmapFrameEncode.Commit();
+                    bitmapEncoder.Commit();
+                }
+            }
+            finally
+            {
+                context.UnmapSubresource(texture, 0);
+                if (dataStream != null)
+                {
+                    dataStream.Dispose();
+                }
+            }
+        }
+
+        private static Guid GetWicPixelFormat(SharpDX.DXGI.Format format)
+        {
+            switch (format)
+            {
+                case SharpDX.DXGI.Format.R8G8B8A8_UNorm:
+                case SharpDX.DXGI.Format.R8G8B8A8_UNorm_SRgb:
+                    return SharpDX.WIC.PixelFormat.Format32bppRGBA;
+                case SharpDX.DXGI.Format.B8G8R8A8_UNorm:
+                case SharpDX.DXGI.Format.B8G8R8A8_UNorm_SRgb:
+                    return SharpDX.WIC.PixelFormat.Format32bppBGRA;
+                default:
+                    throw new NotSupportedException("Unsupported preview backbuffer format: " + format);
+            }
         }
 
         public override void Refresh()
@@ -360,10 +800,10 @@ namespace CodeWalker
                 }
             }
         }
-        private void RenderSelectedItem(Drawable d, TextureDictionary t)
+        private bool RenderSelectedItem(Drawable d, TextureDictionary t, bool requirePedRendered = true)
         {
             // dirty hack to render drawable only when all other drawables are rendered, it fixes issue that props sometimes are not rendered attached to the head
-            if (Renderer.RenderedDrawablesDict.Count < 4) return;
+            if (requirePedRendered && Renderer.RenderedDrawablesDict.Count < 4) return false;
 
             var isProp = d.Name.StartsWith("p_");
             d.Owner = SelectedPed;
@@ -389,17 +829,17 @@ namespace CodeWalker
                         LiveTexture = DDSIO.GetTexture(File.ReadAllBytes(file));
 
                     }
-                    Renderer.RenderDrawable(d, null, SelectedPed.RenderEntity, 0, null, LiveTexture, SelectedPed.AnimClip, null, null, isProp, true);
+                    return Renderer.RenderDrawable(d, null, SelectedPed.RenderEntity, 0, null, LiveTexture, SelectedPed.AnimClip, null, null, isProp, true);
                 }
-                return;
+                return false;
             }
 
-            if(t.Textures.data_items.Count() == 0)
+            if(t == null || t.Textures.data_items.Count() == 0)
             {
-                return;
+                return false;
             }
 
-            Renderer.RenderDrawable(d, null, SelectedPed.RenderEntity, 0, t, t.Textures.data_items[0], SelectedPed.AnimClip, null, null, isProp, true);
+            return Renderer.RenderDrawable(d, null, SelectedPed.RenderEntity, 0, t, t.Textures.data_items[0], SelectedPed.AnimClip, null, null, isProp, true);
         }
 
         private void RenderFloor()

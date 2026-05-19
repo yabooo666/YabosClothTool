@@ -37,6 +37,9 @@ namespace CodeWalker.Rendering
         public Color clearcolour { get; private set; } = new Color(0.2f, 0.4f, 0.6f, 1.0f); //gross
         private System.Drawing.Size beginSize;
         private ViewportF Viewport;
+        private RenderTargetView targetviewOverride;
+        private DepthStencilView depthviewOverride;
+        private ViewportF? viewportOverride;
         private bool autoStartLoop = false;
 
         public bool Init(DXForm form, bool autostart = true)
@@ -343,18 +346,34 @@ namespace CodeWalker.Rendering
 
         public void ClearRenderTarget(DeviceContext ctx)
         {
-            ctx.ClearRenderTargetView(targetview, clearcolour);
-            ctx.ClearDepthStencilView(depthview, DepthStencilClearFlags.Depth, 0.0f, 0);
+            var currentTargetView = targetviewOverride ?? targetview;
+            var currentDepthView = depthviewOverride ?? depthview;
+            ctx.ClearRenderTargetView(currentTargetView, clearcolour);
+            ctx.ClearDepthStencilView(currentDepthView, DepthStencilClearFlags.Depth, 0.0f, 0);
         }
         public void ClearDepth(DeviceContext ctx)
         {
-            ctx.ClearDepthStencilView(depthview, DepthStencilClearFlags.Depth, 0.0f, 0);
+            ctx.ClearDepthStencilView(depthviewOverride ?? depthview, DepthStencilClearFlags.Depth, 0.0f, 0);
         }
         public void SetDefaultRenderTarget(DeviceContext ctx)
         {
-            ctx.OutputMerger.SetRenderTargets(depthview, targetview);
-            ctx.Rasterizer.SetViewport(Viewport);
+            ctx.OutputMerger.SetRenderTargets(depthviewOverride ?? depthview, targetviewOverride ?? targetview);
+            ctx.Rasterizer.SetViewport(viewportOverride ?? Viewport);
             //ctx.Rasterizer.State = RasterizerStateSolid;
+        }
+
+        public void SetRenderTargetOverride(RenderTargetView targetView, DepthStencilView depthView, ViewportF viewport)
+        {
+            targetviewOverride = targetView;
+            depthviewOverride = depthView;
+            viewportOverride = viewport;
+        }
+
+        public void ClearRenderTargetOverride()
+        {
+            targetviewOverride = null;
+            depthviewOverride = null;
+            viewportOverride = null;
         }
 
 
