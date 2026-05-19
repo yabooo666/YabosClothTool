@@ -22,6 +22,7 @@ namespace CodeWalker
         private const float StableTorsoExportCameraPadding = 1.95f;
         private const float StableDefaultExportCameraPadding = 1.35f;
 
+        public event Action BatchExportRequested;
         public Dictionary<string, Drawable> BatchLoadedDrawables = new Dictionary<string, Drawable>(StringComparer.OrdinalIgnoreCase);
         public Dictionary<Drawable, List<TextureDictionary>> BatchLoadedTextureVariants = new Dictionary<Drawable, List<TextureDictionary>>();
 
@@ -125,6 +126,7 @@ namespace CodeWalker
 
                 try
                 {
+                    BatchExportRequested?.Invoke();
                     var exportedCount = ExportAllLoadedPreviewPngs(folderDialog.SelectedPath);
                     UpdateStatus($"Exported {exportedCount} clothing PNGs");
                     MessageBox.Show(this, $"Exported {exportedCount} clothing PNGs.", "Export All PNG", MessageBoxButtons.OK, MessageBoxIcon.Information);
