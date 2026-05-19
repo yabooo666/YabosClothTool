@@ -169,6 +169,8 @@ namespace grzyClothTool.Controls
                     return;
                 }
 
+                RefreshBatchExportCache();
+
                 var selectedNames = selectedDrawables.Select(d => d.Name).ToHashSet();
                 var removedDrawables = _customPedsForm.LoadedDrawables.Keys.Where(name => !selectedNames.Contains(name)).ToList();
                 foreach (var removed in removedDrawables)
@@ -222,6 +224,65 @@ namespace grzyClothTool.Controls
             catch (Exception ex)
             {
                 HandlePreviewError("Failed to update drawables in 3D preview", ex);
+            }
+        }
+
+        private void RefreshBatchExportCache()
+        {
+            if (_customPedsForm == null || MainWindow.AddonManager?.SelectedAddon?.Drawables == null)
+            {
+                return;
+            }
+
+            _customPedsForm.BatchLoadedDrawables.Clear();
+            _customPedsForm.BatchLoadedTextureVariants.Clear();
+
+            foreach (var drawable in MainWindow.AddonManager.SelectedAddon.Drawables.OfType<GDrawable>())
+            {
+                if (drawable == null || drawable.IsEncrypted || string.IsNullOrWhiteSpace(drawable.Name))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var ydd = CWHelper.CreateYddFile(drawable);
+                    if (ydd == null || ydd.Drawables == null || ydd.Drawables.Length == 0)
+                    {
+                        continue;
+                    }
+
+                    var firstDrawable = ydd.Drawables.First();
+                    _customPedsForm.BatchLoadedDrawables[drawable.Name] = firstDrawable;
+                    var textureVariants = new List<CodeWalker.GameFiles.TextureDictionary>();
+
+                    foreach (var texture in drawable.Textures ?? new ObservableCollection<GTexture>())
+                    {
+                        if (texture == null || texture.IsPreviewDisabled)
+                        {
+                            continue;
+                        }
+
+                        try
+                        {
+                            var ytd = CWHelper.CreateYtdFile(texture, texture.DisplayName);
+                            if (ytd?.TextureDict != null)
+                            {
+                                textureVariants.Add(ytd.TextureDict);
+                            }
+                        }
+                        catch (Exception textureEx)
+                        {
+                            LogHelper.Log($"Skipping texture '{texture.DisplayName}' during batch PNG export cache: {textureEx.Message}", Views.LogType.Warning);
+                        }
+                    }
+
+                    _customPedsForm.BatchLoadedTextureVariants[firstDrawable] = textureVariants;
+                }
+                catch (Exception drawableEx)
+                {
+                    LogHelper.Log($"Skipping drawable '{drawable.Name}' during batch PNG export cache: {drawableEx.Message}", Views.LogType.Warning);
+                }
             }
         }
 
