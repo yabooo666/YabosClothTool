@@ -22,6 +22,9 @@ namespace CodeWalker
         private const float StableTorsoExportCameraPadding = 1.95f;
         private const float StableDefaultExportCameraPadding = 1.35f;
 
+        public Dictionary<string, Drawable> BatchLoadedDrawables = new Dictionary<string, Drawable>(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<Drawable, List<TextureDictionary>> BatchLoadedTextureVariants = new Dictionary<Drawable, List<TextureDictionary>>();
+
         protected override void OnShown(EventArgs e)
         {
             base.OnShown(e);
@@ -31,16 +34,10 @@ namespace CodeWalker
 
         private void ReplaceExportButtonForStableLowrCapture()
         {
-            if (ToolsPanel == null)
-            {
-                return;
-            }
+            if (ToolsPanel == null) return;
 
             var oldButton = ToolsPanel.Controls.Find("ExportPreviewButton", false).OfType<Button>().FirstOrDefault();
-            if (oldButton != null && (oldButton.Tag as string) == "StableLowrExport")
-            {
-                return;
-            }
+            if (oldButton != null && (oldButton.Tag as string) == "StableLowrExport") return;
 
             var location = oldButton != null ? oldButton.Location : new System.Drawing.Point(ToolsPanel.Width - 99, 3);
             var size = oldButton != null ? oldButton.Size : new System.Drawing.Size(93, 23);
@@ -72,15 +69,8 @@ namespace CodeWalker
 
         private void AddExportAllPreviewButton()
         {
-            if (ToolsPanel == null)
-            {
-                return;
-            }
-
-            if (ToolsPanel.Controls.Find("ExportAllPreviewButton", false).Length > 0)
-            {
-                return;
-            }
+            if (ToolsPanel == null) return;
+            if (ToolsPanel.Controls.Find("ExportAllPreviewButton", false).Length > 0) return;
 
             var exportAllButton = new Button
             {
@@ -109,10 +99,7 @@ namespace CodeWalker
                 saveFileDialog.OverwritePrompt = true;
                 saveFileDialog.Title = "Export preview PNG";
 
-                if (saveFileDialog.ShowDialog(this) != DialogResult.OK)
-                {
-                    return;
-                }
+                if (saveFileDialog.ShowDialog(this) != DialogResult.OK) return;
 
                 try
                 {
@@ -134,10 +121,7 @@ namespace CodeWalker
                 folderDialog.Description = "Choose folder for exported clothing PNGs";
                 folderDialog.ShowNewFolderButton = true;
 
-                if (folderDialog.ShowDialog(this) != DialogResult.OK)
-                {
-                    return;
-                }
+                if (folderDialog.ShowDialog(this) != DialogResult.OK) return;
 
                 try
                 {
@@ -160,7 +144,7 @@ namespace CodeWalker
             var exportItems = GetLoadedExportItems().ToList();
             if (exportItems.Count == 0)
             {
-                throw new InvalidOperationException("No loaded drawables are available for batch export.");
+                throw new InvalidOperationException("No imported drawables are available for batch export. Open/import an addon first, then try again.");
             }
 
             var exported = new List<BatchExportRecord>();
@@ -170,16 +154,10 @@ namespace CodeWalker
             {
                 var item = exportItems[drawableOrder];
                 var componentName = GetComponentDirectoryName(item.Drawable?.Name);
-                if (componentName == null)
-                {
-                    continue;
-                }
+                if (componentName == null) continue;
 
-                var textures = GetTextureVariants(item.TextureDictionary).ToList();
-                if (textures.Count == 0)
-                {
-                    continue;
-                }
+                var textureDictionaries = item.TextureDictionaries.Where(t => t?.Textures?.data_items != null && t.Textures.data_items.Length > 0).ToList();
+                if (textureDictionaries.Count == 0) continue;
 
                 var drawableId = GetDrawableExportId(item.Drawable?.Name, drawableOrder);
                 drawableId = EnsureUniqueDrawableExportId(componentName, drawableId, usedDrawableIdsByComponent);
@@ -187,14 +165,17 @@ namespace CodeWalker
                 var drawableFolder = Path.Combine(outputRoot, componentName, drawableId);
                 Directory.CreateDirectory(drawableFolder);
 
-                for (var textureIndex = 0; textureIndex < textures.Count; textureIndex++)
+                for (var textureIndex = 0; textureIndex < textureDictionaries.Count; textureIndex++)
                 {
-                    var texture = textures[textureIndex];
+                    var textureDictionary = textureDictionaries[textureIndex];
+                    var texture = textureDictionary.Textures.data_items.FirstOrDefault(t => t != null);
+                    if (texture == null) continue;
+
                     var textureId = textureIndex.ToString("000");
                     var filePath = Path.Combine(drawableFolder, textureId + ".png");
 
                     UpdateStatus($"Exporting {componentName}/{drawableId}/{textureId}.png");
-                    ExportDrawablePreviewPngStable(filePath, item.Drawable, item.TextureDictionary, texture);
+                    ExportDrawablePreviewPngStable(filePath, item.Drawable, textureDictionary, texture);
 
                     exported.Add(new BatchExportRecord
                     {
@@ -214,51 +195,38 @@ namespace CodeWalker
 
         private IEnumerable<BatchExportItem> GetLoadedExportItems()
         {
-            var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            foreach (var drawable in LoadedDrawables.Values)
+            if (BatchLoadedDrawables.Count > 0)
             {
-                if (drawable == null || !seenNames.Add(drawable.Name ?? string.Empty))
+                foreach (var drawable in BatchLoadedDrawables.Values)
                 {
-                    continue;
+                    if (drawable == null) continue;
+
+                    if (!BatchLoadedTextureVariants.TryGetValue(drawable, out var textureDictionaries))
+                    {
+                        textureDictionaries = new List<TextureDictionary>();
+                    }
+
+                    yield return new BatchExportItem
+                    {
+                        Drawable = drawable,
+                        TextureDictionaries = textureDictionaries
+                    };
                 }
 
-                yield return new BatchExportItem
-                {
-                    Drawable = drawable,
-                    TextureDictionary = GetSelectedExportTexture(drawable)
-                };
-            }
-
-            foreach (var drawable in SavedDrawables.Values)
-            {
-                if (drawable == null || !seenNames.Add(drawable.Name ?? string.Empty))
-                {
-                    continue;
-                }
-
-                yield return new BatchExportItem
-                {
-                    Drawable = drawable,
-                    TextureDictionary = GetSelectedExportTexture(drawable)
-                };
-            }
-        }
-
-        private static IEnumerable<Texture> GetTextureVariants(TextureDictionary textureDictionary)
-        {
-            var textures = textureDictionary?.Textures?.data_items;
-            if (textures == null)
-            {
                 yield break;
             }
 
-            foreach (var texture in textures)
+            var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var drawable in LoadedDrawables.Values)
             {
-                if (texture != null)
+                if (drawable == null || !seenNames.Add(drawable.Name ?? string.Empty)) continue;
+
+                var textureDictionary = GetSelectedExportTexture(drawable);
+                yield return new BatchExportItem
                 {
-                    yield return texture;
-                }
+                    Drawable = drawable,
+                    TextureDictionaries = textureDictionary != null ? new List<TextureDictionary> { textureDictionary } : new List<TextureDictionary>()
+                };
             }
         }
 
@@ -291,23 +259,12 @@ namespace CodeWalker
 
         private static int TryGetLastNumericId(string value)
         {
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                return -1;
-            }
+            if (string.IsNullOrWhiteSpace(value)) return -1;
 
             var matches = Regex.Matches(value, "\\d+");
-            if (matches.Count == 0)
-            {
-                return -1;
-            }
+            if (matches.Count == 0) return -1;
 
-            if (int.TryParse(matches[matches.Count - 1].Value, out var id))
-            {
-                return id;
-            }
-
-            return -1;
+            return int.TryParse(matches[matches.Count - 1].Value, out var id) ? id : -1;
         }
 
         private static string EnsureUniqueDrawableExportId(string componentName, string drawableId, Dictionary<string, HashSet<string>> usedDrawableIdsByComponent)
@@ -318,10 +275,7 @@ namespace CodeWalker
                 usedDrawableIdsByComponent[componentName] = usedIds;
             }
 
-            if (usedIds.Add(drawableId))
-            {
-                return drawableId;
-            }
+            if (usedIds.Add(drawableId)) return drawableId;
 
             var suffix = 1;
             string candidate;
@@ -355,10 +309,7 @@ namespace CodeWalker
                 json.AppendLine("      \"textureName\": \"" + EscapeJson(record.TextureName) + "\",");
                 json.AppendLine("      \"path\": \"" + EscapeJson(record.RelativePath) + "\"");
                 json.Append("    }");
-                if (i < records.Count - 1)
-                {
-                    json.Append(",");
-                }
+                if (i < records.Count - 1) json.Append(",");
                 json.AppendLine();
             }
 
@@ -502,30 +453,12 @@ namespace CodeWalker
                 {
                     dxman.ClearRenderTargetOverride();
                     RestoreCameraState(cameraState);
-                    if (componentExportState != null)
-                    {
-                        componentExportState.Restore(SelectedPed);
-                    }
-                    if (stagingTexture != null)
-                    {
-                        stagingTexture.Dispose();
-                    }
-                    if (exportDepthView != null)
-                    {
-                        exportDepthView.Dispose();
-                    }
-                    if (depthTexture != null)
-                    {
-                        depthTexture.Dispose();
-                    }
-                    if (exportTargetView != null)
-                    {
-                        exportTargetView.Dispose();
-                    }
-                    if (exportTexture != null)
-                    {
-                        exportTexture.Dispose();
-                    }
+                    if (componentExportState != null) componentExportState.Restore(SelectedPed);
+                    if (stagingTexture != null) stagingTexture.Dispose();
+                    if (exportDepthView != null) exportDepthView.Dispose();
+                    if (depthTexture != null) depthTexture.Dispose();
+                    if (exportTargetView != null) exportTargetView.Dispose();
+                    if (exportTexture != null) exportTexture.Dispose();
                 }
             }
         }
@@ -557,36 +490,22 @@ namespace CodeWalker
 
         private static float GetStableMinimumExportRadius(int selectedPedComponentIndex)
         {
-            if (selectedPedComponentIndex == LowrComponentIndex)
-            {
-                return StableLowrMinimumExportRadius;
-            }
-            if (selectedPedComponentIndex == UpprComponentIndex || selectedPedComponentIndex == JbibComponentIndex)
-            {
-                return StableTorsoMinimumExportRadius;
-            }
-
+            if (selectedPedComponentIndex == LowrComponentIndex) return StableLowrMinimumExportRadius;
+            if (selectedPedComponentIndex == UpprComponentIndex || selectedPedComponentIndex == JbibComponentIndex) return StableTorsoMinimumExportRadius;
             return StableDefaultMinimumExportRadius;
         }
 
         private static float GetStableExportCameraPadding(int selectedPedComponentIndex)
         {
-            if (selectedPedComponentIndex == LowrComponentIndex)
-            {
-                return StableLowrExportCameraPadding;
-            }
-            if (selectedPedComponentIndex == UpprComponentIndex || selectedPedComponentIndex == JbibComponentIndex)
-            {
-                return StableTorsoExportCameraPadding;
-            }
-
+            if (selectedPedComponentIndex == LowrComponentIndex) return StableLowrExportCameraPadding;
+            if (selectedPedComponentIndex == UpprComponentIndex || selectedPedComponentIndex == JbibComponentIndex) return StableTorsoExportCameraPadding;
             return StableDefaultExportCameraPadding;
         }
 
         private class BatchExportItem
         {
             public Drawable Drawable;
-            public TextureDictionary TextureDictionary;
+            public List<TextureDictionary> TextureDictionaries = new List<TextureDictionary>();
         }
 
         private class BatchExportRecord
