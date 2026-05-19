@@ -152,6 +152,7 @@ namespace CodeWalker
         {
 
             InitializeComponent();
+            AddExportPreviewButton();
 
             ComponentComboBoxes = new List<List<ComponentComboItem>>
             {
@@ -193,6 +194,90 @@ namespace CodeWalker
             autoRotateTimer = new System.Windows.Forms.Timer();
             autoRotateTimer.Interval = 16; // About 60 FPS
             autoRotateTimer.Tick += AutoRotateTimer_Tick;
+        }
+
+        private void AddExportPreviewButton()
+        {
+            var exportButton = new Button
+            {
+                Text = "Export PNG",
+                Width = 100,
+                Height = 24,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Location = new System.Drawing.Point(125, 8)
+            };
+
+            exportButton.Click += ExportPreviewButton_Click;
+            ToolsCameraTabPage.Controls.Add(exportButton);
+            exportButton.BringToFront();
+        }
+
+        private void ExportPreviewButton_Click(object sender, EventArgs e)
+        {
+            using var dialog = new SaveFileDialog
+            {
+                Filter = "PNG Image (*.png)|*.png",
+                FileName = $"preview_{DateTime.Now:yyyyMMdd_HHmmss}.png",
+                Title = "Export current 3D preview"
+            };
+
+            if (dialog.ShowDialog() != DialogResult.OK)
+            {
+                return;
+            }
+
+            try
+            {
+                ExportCurrentPreviewPng(dialog.FileName);
+                UpdateStatus($"Preview exported: {Path.GetFileName(dialog.FileName)}");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to export preview PNG:\n{ex.Message}", "Export failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                LogError($"Preview export failed: {ex}");
+            }
+        }
+
+        public void ExportCurrentPreviewPng(string outputPath)
+        {
+            if (Renderer?.DXMan?.device == null || Renderer.DXMan.context == null || Renderer.DXMan.backbuffer == null)
+            {
+                throw new InvalidOperationException("3D renderer is not ready yet.");
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(outputPath) ?? AppDomain.CurrentDomain.BaseDirectory);
+
+            lock (Renderer.RenderSyncRoot)
+            {
+                var context = Renderer.DXMan.context;
+                var device = Renderer.DXMan.device;
+                var backbuffer = Renderer.DXMan.backbuffer;
+                var description = backbuffer.Description;
+
+                if (description.SampleDescription.Count > 1)
+                {
+                    using var resolvedTexture = new Texture2D(device, new Texture2DDescription
+                    {
+                        Width = description.Width,
+                        Height = description.Height,
+                        MipLevels = 1,
+                        ArraySize = 1,
+                        Format = description.Format,
+                        SampleDescription = new SharpDX.DXGI.SampleDescription(1, 0),
+                        Usage = ResourceUsage.Default,
+                        BindFlags = BindFlags.None,
+                        CpuAccessFlags = CpuAccessFlags.None,
+                        OptionFlags = ResourceOptionFlags.None
+                    });
+
+                    context.ResolveSubresource(backbuffer, 0, resolvedTexture, 0, description.Format);
+                    Resource.ToFile(context, resolvedTexture, ImageFileFormat.Png, outputPath);
+                }
+                else
+                {
+                    Resource.ToFile(context, backbuffer, ImageFileFormat.Png, outputPath);
+                }
+            }
         }
 
         public override void Refresh()
@@ -1255,7 +1340,6 @@ namespace CodeWalker
             switch (e.Button)
             {
                 case MouseButtons.Left: MouseLButtonDown = true; break;
-                case MouseButtons.Right: MouseRButtonDown = true; break;
             }
 
             if (!ToolsPanelShowButton.Focused)
@@ -1523,758 +1607,4 @@ namespace CodeWalker
                     break;
                 case "Vertex colour 3":
                     Renderer.shaders.RenderMode = WorldRenderMode.VertexColour;
-                    Renderer.shaders.RenderVertexColourIndex = 3;
                     break;
-                case "Texture coord 1":
-                    Renderer.shaders.RenderMode = WorldRenderMode.TextureCoord;
-                    Renderer.shaders.RenderTextureCoordIndex = 1;
-                    break;
-                case "Texture coord 2":
-                    Renderer.shaders.RenderMode = WorldRenderMode.TextureCoord;
-                    Renderer.shaders.RenderTextureCoordIndex = 2;
-                    break;
-                case "Texture coord 3":
-                    Renderer.shaders.RenderMode = WorldRenderMode.TextureCoord;
-                    Renderer.shaders.RenderTextureCoordIndex = 3;
-                    break;
-            }
-        }
-
-        private void TextureSamplerComboBox_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            if (TextureSamplerComboBox.SelectedItem is ShaderParamNames)
-            {
-                Renderer.shaders.RenderTextureSampler = (ShaderParamNames)TextureSamplerComboBox.SelectedItem;
-            }
-        }
-
-        private void TextureCoordsComboBox_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            switch (TextureCoordsComboBox.Text)
-            {
-                default:
-                case "Texture coord 1":
-                    Renderer.shaders.RenderTextureSamplerCoord = 1;
-                    break;
-                case "Texture coord 2":
-                    Renderer.shaders.RenderTextureSamplerCoord = 2;
-                    break;
-                case "Texture coord 3":
-                    Renderer.shaders.RenderTextureSamplerCoord = 3;
-                    break;
-            }
-        }
-
-        private void SkeletonsCheckBox_CheckedChanged(object sender, EventArgs e)
-        {
-            Renderer.renderskeletons = SkeletonsCheckBox.Checked;
-        }
-
-        private void StatusBarCheckBox_CheckedChanged(object sender, EventArgs e)
-        {
-            StatusStrip.Visible = StatusBarCheckBox.Checked;
-        }
-
-        private void ErrorConsoleCheckBox_CheckedChanged(object sender, EventArgs e)
-        {
-            ConsolePanel.Visible = ErrorConsoleCheckBox.Checked;
-        }
-
-        private void PedNameComboBox_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            if (!GameFileCache.IsInited) return;
-
-            LoadPed();
-        }
-
-        private void ClipDictComboBox_TextChanged(object sender, EventArgs e)
-        {
-            if (_suppressClipDictEvent) return;
-
-            LoadClipDict(ClipDictComboBox.Text);
-        }
-
-
-        private void ClipComboBox_TextChanged(object sender, EventArgs e)
-        {
-            SelectClip(ClipComboBox.Text);
-        }
-
-        private void EnableRootMotionCheckBox_CheckedChanged(object sender, EventArgs e)
-        {
-            SelectedPed.EnableRootMotion = EnableRootMotionCheckBox.Checked;
-        }
-
-        private void HDRRenderingCheckBox_CheckedChanged(object sender, EventArgs e)
-        {
-            lock (Renderer.RenderSyncRoot)
-            {
-                Renderer.shaders.hdr = HDRRenderingCheckBox.Checked;
-            }
-        }
-
-        private void EnableAnimationCheckBox_CheckedChanged(object sender, EventArgs e)
-        {
-            ClipComboBox.Enabled = EnableAnimationCheckBox.Checked;
-            ClipDictComboBox.Enabled = EnableAnimationCheckBox.Checked;
-            CustomAnimComboBox.Enabled = EnableAnimationCheckBox.Checked;
-            EnableRootMotionCheckBox.Enabled = EnableAnimationCheckBox.Checked;
-            PlaybackSpeedTrackBar.Enabled = EnableAnimationCheckBox.Checked;
-
-            if (EnableAnimationCheckBox.Checked)
-            {
-                LoadAnimsForModel(SelectedPed.Name);
-            } 
-            else
-            {
-                ClipDictComboBox.Text = "";
-                ClipComboBox.Text = "";
-                CustomAnimComboBox.Text = "";
-            }
-        }
-
-        private void PlaybackSpeedTrackBar_Scroll(object sender, EventArgs e)
-        {
-            int v = PlaybackSpeedTrackBar.Value;
-            float fh = v / 60.0f;
-            UpdatePlaybackSpeedLabel();
-
-            lock (Renderer.RenderSyncRoot)
-            {
-                SelectedPed.AnimClip.PlaybackSpeed = fh;
-            }
-        }
-
-        private void UpdatePlaybackSpeedLabel()
-        {
-            int v = PlaybackSpeedTrackBar.Value;
-            float fh = v / 60.0f;
-            PlaybackSpeedLabel.Text = string.Format("{0:0.00}", fh);
-        }
-
-        private void OptionsComponent_UpDown_ValueChanged(object sender, EventArgs e)
-        {
-            var compId = Convert.ToInt32(((NumericUpDown)sender).Tag);
-            var value = Convert.ToInt32(((NumericUpDown)sender).Value);
-
-            SetComponentDrawable(compId, value);
-        }
-
-        private void Save_defaultComp_Click(object sender, EventArgs e)
-        {
-            //ugly as shit but yeah it works
-
-            int index = PedNameComboBox.SelectedIndex;
-
-            var head = Settings.Default.HeadComp.Split(';');
-            head[index] = head_updown.Value.ToString();
-            Settings.Default.HeadComp = string.Join(";", head);
-
-            var berd = Settings.Default.BerdComp.Split(';');
-            berd[index] = berd_updown.Value.ToString();
-            Settings.Default.BerdComp = string.Join(";", berd);
-
-            var hair = Settings.Default.HairComp.Split(';');
-            hair[index] = hair_updown.Value.ToString();
-            Settings.Default.HairComp = string.Join(";", hair);
-
-            var uppr = Settings.Default.UpprComp.Split(';');
-            uppr[index] = uppr_updown.Value.ToString();
-            Settings.Default.UpprComp = string.Join(";", uppr);
-
-            var lowr = Settings.Default.LowrComp.Split(';');
-            lowr[index] = lowr_updown.Value.ToString();
-            Settings.Default.LowrComp = string.Join(";", lowr);
-
-            var feet = Settings.Default.FeetComp.Split(';');
-            feet[index] = feet_updown.Value.ToString();
-            Settings.Default.FeetComp = string.Join(";", feet);
-
-
-
-            Settings.Default.Save();
-        }
-
-        private void LiveTexturePreview_Click(object sender, EventArgs e)
-        {
-            if (liveTexturePath != null)
-            {
-                liveTexturePath = null;
-                Renderer.LiveTextureEnabled = false;
-            }
-            else
-            {
-                using (var fbd = new FolderBrowserDialog())
-                {
-                    if (fbd.ShowDialog() == DialogResult.OK)
-                    {
-                        liveTexturePath = fbd.SelectedPath;
-                        Renderer.LiveTextureEnabled = true;
-                    }
-                }
-            }
-
-            liveTxtButton.Text = Renderer.LiveTextureEnabled ? "Disable" : "Enable";
-            diffuseRadio.Enabled = !Renderer.LiveTextureEnabled;
-            normalRadio.Enabled = !Renderer.LiveTextureEnabled;
-            specularRadio.Enabled = !Renderer.LiveTextureEnabled;
-        }
-
-        private void liveTexture_CheckedChanged(object sender, EventArgs e)
-        {
-            RadioButton radioButton = sender as RadioButton;
-            if (radioButton.Checked == true)
-            {
-                switch (radioButton.Text)
-                {
-                    case "Diffuse":
-                        Renderer.LiveTextureSelectedMode = LiveTextureMode.Diffuse;
-                        break;
-                    case "Normal":
-                        Renderer.LiveTextureSelectedMode = LiveTextureMode.Normal;
-                        break;
-                    case "Specular":
-                        Renderer.LiveTextureSelectedMode = LiveTextureMode.Specular;
-                        break;
-                }
-            }
-        }
-
-        private void FloorCheckbox_CheckedChanged(object sender, EventArgs e)
-        {
-            floorUpDown.Enabled = floorCheckbox.Checked;
-        }
-
-        private void FloorUpDown_ValueChanged(object sender, EventArgs e)
-        {
-            var value = Convert.ToInt32(((NumericUpDown)sender).Value);
-
-        }
-
-        private void AutoRotateTimer_Tick(object sender, EventArgs e)
-        {
-            if (SelectedPed != null)
-            {
-                autoRotateAngle += AutoRotateSpeed * (float)Math.PI / 180f;
-                if (autoRotateAngle > 2 * Math.PI) // Keep the autoRotateAngle within the 0 to 360
-                {
-                    autoRotateAngle -= 2 * (float)Math.PI;
-                }
-
-                Quaternion newRotation = Quaternion.RotationYawPitchRoll(0, 0, autoRotateAngle);
-                SelectedPed.Rotation = newRotation;
-                SelectedPed.UpdateEntity();
-            }
-        }
-
-        private void AutoRotatePedCheckBox_CheckedChanged(object sender, EventArgs e)
-        {
-            if (AutoRotatePedCheckBox.Checked)
-            {
-                autoRotateTimer.Start();
-            }
-            else
-            {
-                autoRotateTimer.Stop();
-            }
-        }
-
-        private void OnlySelectedCheckBox_CheckedChanged(object sender, EventArgs e)
-        {
-            if (OnlySelectedCheckBox.Checked == renderOnlySelected) { return; }
-            renderOnlySelected = OnlySelectedCheckBox.Checked;
-            
-            UpdateModelsUI();
-        }
-
-        private void SetDefaultCameraPosition()
-        {
-            camera.FollowEntity = camEntity;
-            camera.FollowEntity.Position = Vector3.Zero;// prevworldpos;
-
-            // used to be Vector3.ForwardLH, but default animations rotates ped, so changed it to Vector3.ForwardRH 
-            camera.FollowEntity.Orientation = Quaternion.LookAtLH(Vector3.Zero, Vector3.Up, Vector3.ForwardRH); 
-
-            camera.TargetDistance = 2.0f;
-            camera.CurrentDistance = 2.0f;
-            camera.TargetRotation.Y = 0.2f;
-            camera.CurrentRotation.Y = 0.2f;
-            camera.TargetRotation.X = 1.0f * (float)Math.PI;
-            camera.CurrentRotation.X = 1.0f * (float)Math.PI;
-
-            if (SelectedPed != null)
-            {
-                // restart rotation angle, so ped faces camera
-                autoRotateAngle = 0f;
-                SelectedPed.Rotation = Quaternion.Identity;
-                SelectedPed.UpdateEntity();
-            }
-        }
-
-        private void LoadCustomAnimationsFromFolder()
-        {
-            try
-            {
-                string exeDirectory = AppDomain.CurrentDomain.BaseDirectory;
-                string animationsFolder = Path.Combine(exeDirectory, "animations");
-
-                if (!Directory.Exists(animationsFolder))
-                    return;
-
-                string[] files = Directory.GetFiles(animationsFolder, "*.ycd", SearchOption.TopDirectoryOnly);
-
-                foreach (string filePath in files)
-                {
-                    string fileName = Path.GetFileName(filePath);
-
-                    if (CustomAnimations.ContainsKey(fileName))
-                        continue;
-
-                    try
-                    {
-                        byte[] data = File.ReadAllBytes(filePath);
-
-                        RpfResourceFileEntry resentry = RpfFile.CreateResourceFileEntry(ref data, 46);
-                        byte[] decompressedData = ResourceBuilder.Decompress(data);
-
-                        YcdFile ycd = new YcdFile();
-                        ycd.Load(decompressedData, resentry);
-
-                        if (ycd.ClipDictionary != null && ycd.ClipMapEntries != null && ycd.ClipMapEntries.Length > 0)
-                        {
-                            ycd.Loaded = true;
-                            CustomAnimations[fileName] = ycd;
-                            CustomAnimationPaths.Add(filePath);
-
-                            CustomAnimComboBox.Items.Add(fileName);
-                        }
-                        else
-                        {
-                            Debug.WriteLine($"Skipping invalid custom animation: {fileName}");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"Error loading custom animation {fileName}: {ex.Message}");
-                    }
-                }
-
-                CustomAnimComboBox.Refresh();
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"LoadCustomAnimationsFromFolder() failed: {ex.Message}");
-            }
-        }
-
-
-        private string CopyAnimationToFolder(string sourceFilePath)
-        {
-            try
-            {
-                string exeDirectory = AppDomain.CurrentDomain.BaseDirectory;
-                string animationsFolder = Path.Combine(exeDirectory, "animations");
-
-                if (!Directory.Exists(animationsFolder))
-                {
-                    Directory.CreateDirectory(animationsFolder);
-                }
-
-                string fileName = Path.GetFileName(sourceFilePath);
-                string destinationPath = Path.Combine(animationsFolder, fileName);
-
-                File.Copy(sourceFilePath, destinationPath, true);
-
-                return destinationPath;
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error copying animation file:\n{ex.Message}",
-                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return sourceFilePath;
-            }
-        }
-
-        private void UpdateCameraInputsText()
-        {
-            if (CameraPositionTextBox.Focused || CameraRotationTextBox.Focused || CameraDistanceTextBox.Focused)
-                return;
-
-            CameraPositionTextBox.Text = Vector3ToText(camEntity.Position);
-            CameraRotationTextBox.Text = Vector3ToText(RadiansToDegrees(camera.CurrentRotation));
-            CameraDistanceTextBox.Text = $"{camera.CurrentDistance.ToString("F4", CultureInfo.InvariantCulture)}";
-        }
-
-        private void UpdateCameraInputs()
-        {
-            if (_inputsUpdatePending) return;
-
-            if (CameraPositionTextBox.InvokeRequired)
-            {
-                _inputsUpdatePending = true;
-
-                BeginInvoke((Action)(() =>
-                {
-                    try
-                    {
-                        UpdateCameraInputsText();
-                    }
-                    finally
-                    {
-                        _inputsUpdatePending = false;
-                    }
-                }));
-            }
-            else
-            {
-                UpdateCameraInputsText();
-            }
-        }
-
-        private string Vector3ToText(Vector3 v)
-        {
-            return $"{v.X.ToString("F4", CultureInfo.InvariantCulture)}, {v.Y.ToString("F4", CultureInfo.InvariantCulture)}, {v.Z.ToString("F4", CultureInfo.InvariantCulture)}";
-        }
-
-        private bool TryParseVector3FromText(string text, out Vector3 result)
-        {
-            result = Vector3.Zero;
-
-            if (string.IsNullOrWhiteSpace(text))
-                return false;
-
-            var parts = text.Split(',');
-
-            if (parts.Length != 3)
-                return false;
-
-            float x, y, z;
-
-            if (!float.TryParse(parts[0].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out x)) return false;
-            if (!float.TryParse(parts[1].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out y)) return false;
-            if (!float.TryParse(parts[2].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out z)) return false;
-
-            result = new Vector3(x, y, z);
-            return true;
-        }
-
-        private static Vector3 DegreesToRadians(Vector3 degrees)
-        {
-            float radiansX = 3.14f * degrees.X / 180f;
-            float radiansY = 3.14f * degrees.Y / 180f;
-            float radiansZ = 3.14f * degrees.Z / 180f;
-
-            return new Vector3(radiansX, radiansY, radiansZ);
-        }
-
-        private static Vector3 RadiansToDegrees(Vector3 radians)
-        {
-            float degreesX = radians.X * 180f / 3.14f;
-            float degreesY = radians.Y * 180f / 3.14f;
-            float degreesZ = radians.Z * 180f / 3.14f;
-
-            return new Vector3(degreesX, degreesY, degreesZ);
-        }
-
-        private void CameraPositionTextBox_TextChanged(object sender, EventArgs e)
-        {
-            if (TryParseVector3FromText(CameraPositionTextBox.Text, out Vector3 position))
-            {
-                camEntity.Position = position;
-                if (CameraPositionTextBox.Focused)
-                {
-                    ClearActivePreset();
-                }
-            }
-        }
-
-        private void CameraRotationTextBox_TextChanged(object sender, EventArgs e)
-        {
-            if (TryParseVector3FromText(CameraRotationTextBox.Text, out Vector3 rotationDeg))
-            {
-                var rotationRad = DegreesToRadians(rotationDeg);
-                camera.CurrentRotation = rotationRad;
-                camera.TargetRotation = rotationRad;
-                if (CameraRotationTextBox.Focused)
-                {
-                    ClearActivePreset();
-                }
-            }
-        }
-
-        private void CameraDistanceTextBox_TextChanged(object sender, EventArgs e)
-        {
-            if (float.TryParse(CameraDistanceTextBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out float distance))
-            {
-                camera.CurrentDistance = distance;
-                camera.TargetDistance = distance;
-                if (CameraDistanceTextBox.Focused)
-                {
-                    ClearActivePreset();
-                }
-            }
-        }
-
-        private void FillDataGridView()
-        {
-            CameraPresetsDataGridView.Rows.Clear();
-
-            var presets = CameraPresetCollection.Deserialize(Settings.Default.CameraPresets);
-            foreach (var mapValue in presets.Values)
-            {
-                DataGridViewRow NewPresetRow = new DataGridViewRow();
-
-                NewPresetRow.CreateCells(CameraPresetsDataGridView);
-                NewPresetRow.Cells[0].Value = mapValue.Name;
-                NewPresetRow.Cells[1].Value = "✕";
-
-                // Highlight active preset with green
-                if (mapValue.Name == _activePresetName)
-                {
-                    NewPresetRow.DefaultCellStyle.BackColor = System.Drawing.Color.LightGreen;
-                    NewPresetRow.DefaultCellStyle.ForeColor = System.Drawing.Color.Black;
-                    NewPresetRow.DefaultCellStyle.SelectionBackColor = System.Drawing.Color.LightGreen;
-                    NewPresetRow.DefaultCellStyle.SelectionForeColor = System.Drawing.Color.Black;
-                }
-                else
-                {
-                    NewPresetRow.DefaultCellStyle.SelectionBackColor = CameraPresetsDataGridView.DefaultCellStyle.BackColor;
-                    NewPresetRow.DefaultCellStyle.SelectionForeColor = CameraPresetsDataGridView.DefaultCellStyle.ForeColor;
-                }
-
-                CameraPresetsDataGridView.Rows.Add(NewPresetRow);
-            }
-        }
-
-        private void btn_addCameraPreset_Click(object sender, EventArgs e)
-        {
-            if (CameraSavePresetTextBox.Text.Length == 0)
-                return;
-
-            var presetName = CameraSavePresetTextBox.Text;
-
-            var presets = CameraPresetCollection.Deserialize(Settings.Default.CameraPresets);
-            var position = CameraPositionTextBox.Text;
-            var rotation = CameraRotationTextBox.Text;
-            var distance = CameraDistanceTextBox.Text;
-            presets.Add(new CameraPreset(presetName, position, rotation, distance));
-            Settings.Default.CameraPresets = presets.Serialize();
-            Settings.Default.Save();
-
-            CameraSavePresetTextBox.Text = "";
-            SetActivePreset(presetName);
-        }
-
-        private void CameraPresetsDataGridView_CellContentClick(object sender, DataGridViewCellEventArgs e)
-        {
-            if (e.RowIndex < 0) return;
-
-            var presets = CameraPresetCollection.Deserialize(Settings.Default.CameraPresets);
-            if (e.RowIndex >= presets.Values.Count) return;
-
-            // Delete preset (X column)
-            if (e.ColumnIndex == CameraPresetsDataGridView.Columns["DataGridViewDelete"].Index)
-            {
-                var preset = presets.GetByIndex(e.RowIndex);
-                var presetName = preset.Name;
-
-                presets.RemoveByName(presetName);
-                Settings.Default.CameraPresets = presets.Serialize();
-                Settings.Default.Save();
-
-                if (_activePresetName == presetName)
-                {
-                    ClearActivePreset();
-                }
-
-                FillDataGridView();
-            }
-        }
-
-        private void CameraPresetsDataGridView_CellClick(object sender, DataGridViewCellEventArgs e)
-        {
-            if (e.RowIndex < 0) return;
-            if (e.ColumnIndex != CameraPresetsDataGridView.Columns["DataGridViewName"].Index)
-                return;
-
-            var presets = CameraPresetCollection.Deserialize(Settings.Default.CameraPresets);
-            if (e.RowIndex >= presets.Values.Count) return;
-
-            var preset = presets.GetByIndex(e.RowIndex);
-
-            ApplyCameraPreset(preset);
-            SetActivePreset(preset.Name);
-        }
-
-        private void RestartCamera_Click(object sender, EventArgs e)
-        {
-            SetDefaultCameraPosition();
-            ClearActivePreset();
-        }
-
-        private void SetActivePreset(string presetName)
-        {
-            _activePresetName = presetName;
-            Settings.Default.LastUsedCameraPreset = presetName;
-            Settings.Default.Save();
-            FillDataGridView();
-        }
-
-        private void ClearActivePreset()
-        {
-            if (_activePresetName != null)
-            {
-                _activePresetName = null;
-                FillDataGridView();
-            }
-        }
-
-        private void LoadLastUsedPreset()
-        {
-            var lastUsedPresetName = Settings.Default.LastUsedCameraPreset;
-            if (string.IsNullOrEmpty(lastUsedPresetName))
-                return;
-
-            var presets = CameraPresetCollection.Deserialize(Settings.Default.CameraPresets);
-            var preset = presets.GetByName(lastUsedPresetName);
-
-            if (preset != null)
-            {
-                _activePresetName = preset.Name;
-                ApplyCameraPreset(preset);
-                FillDataGridView();
-            }
-        }
-
-        private void ApplyCameraPreset(CameraPreset preset)
-        {
-            if (TryParseVector3FromText(preset.Position, out Vector3 position))
-            {
-                camEntity.Position = position;
-            }
-
-            if (TryParseVector3FromText(preset.Rotation, out Vector3 rotationDeg))
-            {
-                var rotationRad = DegreesToRadians(rotationDeg);
-                camera.CurrentRotation = rotationRad;
-                camera.TargetRotation = rotationRad;
-            }
-
-            if (float.TryParse(preset.Distance, NumberStyles.Float, CultureInfo.InvariantCulture, out float distance))
-            {
-                camera.CurrentDistance = distance;
-                camera.TargetDistance = distance;
-            }
-
-            CameraPositionTextBox.Text = preset.Position;
-            CameraRotationTextBox.Text = preset.Rotation;
-            CameraDistanceTextBox.Text = preset.Distance;
-        }
-
-        private void AddCustomAnimButton_Click(object sender, EventArgs e)
-        {
-            using (OpenFileDialog ofd = new OpenFileDialog())
-            {
-                ofd.Filter = "YCD Files (*.ycd)|*.ycd|All Files (*.*)|*.*";
-                ofd.Title = "Select Animation File";
-                ofd.Multiselect = true;
-
-                if (ofd.ShowDialog() != DialogResult.OK)
-                    return;
-
-                foreach (string filePath in ofd.FileNames)
-                {
-                    string fileName = Path.GetFileName(filePath);
-
-                    if (CustomAnimations.ContainsKey(fileName))
-                    {
-                        UpdateStatus($"Animation already loaded: {fileName}");
-                        continue;
-                    }
-
-                    try
-                    {
-                        string copiedPath = CopyAnimationToFolder(filePath);
-
-                        byte[] data = File.ReadAllBytes(copiedPath);
-                        RpfResourceFileEntry resentry = RpfFile.CreateResourceFileEntry(ref data, 46);
-                        byte[] decompressedData = ResourceBuilder.Decompress(data);
-
-                        YcdFile ycd = new YcdFile();
-                        ycd.Load(decompressedData, resentry);
-
-                        if (ycd.ClipDictionary != null && ycd.ClipMapEntries != null && ycd.ClipMapEntries.Length > 0)
-                        {
-                            ycd.Loaded = true;
-                            CustomAnimationPaths.Add(copiedPath);
-                            CustomAnimations[fileName] = ycd;
-
-                            CustomAnimComboBox.Items.Add(fileName);
-                            CustomAnimComboBox.Refresh();
-
-                            UpdateStatus($"Loaded custom animation: {fileName}  ({ycd.ClipMapEntries.Length} clips)");
-                        }
-                        else
-                        {
-                            MessageBox.Show($"Invalid animation file: {fileName}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        MessageBox.Show($"Error loading file {fileName}:\n{ex.Message}",
-                            "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    }
-                }
-            }
-        }
-
-
-        private void CustomAnimComboBox_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            if (CustomAnimComboBox.SelectedIndex < 0)
-                return;
-
-            string selectedFileName = CustomAnimComboBox.SelectedItem.ToString();
-
-            if (!CustomAnimations.TryGetValue(selectedFileName, out YcdFile ycd))
-                return;
-
-            SelectedPed.Ycd = ycd;
-
-            ClipComboBox.Items.Clear();
-            ClipComboBox.Items.Add("");
-
-            if (ycd?.ClipMapEntries != null)
-            {
-                List<string> items = new List<string>();
-
-                foreach (var cme in ycd.ClipMapEntries)
-                {
-                    if (cme.Clip != null)
-                        items.Add(cme.Clip.ShortName);
-                }
-
-                items.Sort();
-                foreach (var item in items)
-                    ClipComboBox.Items.Add(item);
-            }
-
-            _suppressClipDictEvent = true;
-            try
-            {
-                ClipDictComboBox.Text = "";
-            }
-            finally
-            {
-                _suppressClipDictEvent = false;
-            }
-
-            if (ClipComboBox.Items.Count > 1)
-            {
-                ClipComboBox.SelectedIndex = 1;
-                SelectClip(ClipComboBox.Items[1].ToString());
-            }
-        }
-
-    }
-}
