@@ -124,12 +124,18 @@ namespace CodeWalker
 
                 if (folderDialog.ShowDialog(this) != DialogResult.OK) return;
 
+                BatchExportProgressForm progress = null;
                 try
                 {
+                    progress = new BatchExportProgressForm();
+                    progress.Show(this);
+                    progress.SetStatus("Preparing imported clothes...", 0, 1, 0, 0);
+                    Application.DoEvents();
+
                     BatchExportRequested?.Invoke();
-                    var exportedCount = ExportAllLoadedPreviewPngs(folderDialog.SelectedPath);
-                    UpdateStatus($"Exported {exportedCount} clothing PNGs");
-                    MessageBox.Show(this, $"Exported {exportedCount} clothing PNGs.", "Export All PNG", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    var result = ExportAllLoadedPreviewPngs(folderDialog.SelectedPath, progress);
+                    UpdateStatus($"Exported {result.ExportedCount} clothing PNGs");
+                    MessageBox.Show(this, $"Exported {result.ExportedCount} clothing PNGs.\nSkipped/failed: {result.FailedCount}.", "Export All PNG", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 catch (Exception ex)
                 {
@@ -138,6 +144,7 @@ namespace CodeWalker
                 }
                 finally
                 {
+                    if (progress != null && !progress.IsDisposed) progress.Close();
                     BatchLoadedDrawables.Clear();
                     BatchLoadedTextureVariants.Clear();
                     GC.Collect();
@@ -146,7 +153,7 @@ namespace CodeWalker
             }
         }
 
-        private int ExportAllLoadedPreviewPngs(string outputRoot)
+        private BatchExportResult ExportAllLoadedPreviewPngs(string outputRoot, BatchExportProgressForm progress)
         {
             Directory.CreateDirectory(outputRoot);
 
@@ -156,7 +163,15 @@ namespace CodeWalker
                 throw new InvalidOperationException("No imported drawables are available for batch export. Open/import an addon first, then try again.");
             }
 
+            var total = exportItems.Sum(item => item.TextureDictionaries.Count(t => SelectPreviewTexture(t) != null));
+            if (total <= 0)
+            {
+                throw new InvalidOperationException("No valid diffuse textures were found for batch export.");
+            }
+
             var exported = new List<BatchExportRecord>();
+            var failed = 0;
+            var processed = 0;
             var usedDrawableIdsByComponent = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
 
             for (var drawableOrder = 0; drawableOrder < exportItems.Count; drawableOrder++)
@@ -176,30 +191,48 @@ namespace CodeWalker
 
                 for (var textureIndex = 0; textureIndex < textureDictionaries.Count; textureIndex++)
                 {
+                    if (progress != null && progress.CancelRequested)
+                    {
+                        WriteBatchExportManifest(outputRoot, exported);
+                        return new BatchExportResult { ExportedCount = exported.Count, FailedCount = failed };
+                    }
+
                     var textureDictionary = textureDictionaries[textureIndex];
                     var texture = SelectPreviewTexture(textureDictionary);
                     if (texture == null) continue;
 
                     var textureId = textureIndex.ToString("000");
+                    var relativePath = componentName + "/" + drawableId + "/" + textureId + ".png";
                     var filePath = Path.Combine(drawableFolder, textureId + ".png");
 
-                    UpdateStatus($"Exporting {componentName}/{drawableId}/{textureId}.png");
-                    ExportDrawablePreviewPngStable(filePath, item.Drawable, textureDictionary, texture);
+                    processed++;
+                    progress?.SetStatus("Exporting " + relativePath, processed, total, exported.Count, failed);
+                    UpdateStatus($"Exporting {relativePath}");
+                    Application.DoEvents();
 
-                    exported.Add(new BatchExportRecord
+                    try
                     {
-                        Component = componentName,
-                        DrawableId = drawableId,
-                        TextureId = textureId,
-                        DrawableName = item.Drawable?.Name ?? string.Empty,
-                        TextureName = texture?.Name ?? string.Empty,
-                        RelativePath = componentName + "/" + drawableId + "/" + textureId + ".png"
-                    });
+                        ExportDrawablePreviewPngStable(filePath, item.Drawable, textureDictionary, texture);
+                        exported.Add(new BatchExportRecord
+                        {
+                            Component = componentName,
+                            DrawableId = drawableId,
+                            TextureId = textureId,
+                            DrawableName = item.Drawable?.Name ?? string.Empty,
+                            TextureName = texture?.Name ?? string.Empty,
+                            RelativePath = relativePath
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        failed++;
+                        LogError("Skipped batch PNG export " + relativePath + ": " + ex.Message);
+                    }
                 }
             }
 
             WriteBatchExportManifest(outputRoot, exported);
-            return exported.Count;
+            return new BatchExportResult { ExportedCount = exported.Count, FailedCount = failed };
         }
 
         private IEnumerable<BatchExportItem> GetLoadedExportItems()
@@ -468,7 +501,7 @@ namespace CodeWalker
                     context.ClearRenderTargetView(exportTargetView, new Color(0, 0, 0, 0));
                     context.ClearDepthStencilView(exportDepthView, DepthStencilClearFlags.Depth, 0.0f, 0);
 
-                    if (!RenderSelectedExportItemWithRetry(selectedDrawable, selectedTexture, selectedPedComponentIndex))
+                    if (!RenderBatchExportItemWithRetry(selectedDrawable, selectedTexture, selectedPedComponentIndex, previewTexture))
                     {
                         throw new InvalidOperationException("The selected drawable is not ready to render yet. Wait for it to appear in the preview, then export again.");
                     }
@@ -498,6 +531,88 @@ namespace CodeWalker
                     if (exportTexture != null) exportTexture.Dispose();
                 }
             }
+        }
+
+        private bool RenderBatchExportItemWithRetry(Drawable selectedDrawable, TextureDictionary selectedTexture, int selectedPedComponentIndex, Texture previewTexture)
+        {
+            for (int i = 0; i < 8; i++)
+            {
+                if (RenderBatchExportItem(selectedDrawable, selectedTexture, selectedPedComponentIndex, previewTexture))
+                {
+                    return true;
+                }
+
+                Renderer.RenderableCache.ContentThreadProc();
+                Renderer.RenderableCache.RenderThreadSync();
+            }
+
+            return false;
+        }
+
+        private bool RenderBatchExportItem(Drawable selectedDrawable, TextureDictionary selectedTexture, int selectedPedComponentIndex, Texture previewTexture)
+        {
+            if (selectedPedComponentIndex >= 0)
+            {
+                return RenderBatchPedComponent(selectedPedComponentIndex, selectedTexture, previewTexture, selectedDrawable);
+            }
+
+            var texture = previewTexture ?? SelectPreviewTexture(selectedTexture);
+            if (texture == null) return false;
+
+            selectedDrawable.Owner = SelectedPed;
+            if (selectedDrawable.Skeleton == null || selectedDrawable.Skeleton.Bones == null || selectedDrawable.Skeleton.Bones.Items.Length == 0)
+            {
+                selectedDrawable.Skeleton = SelectedPed.Skeleton.Clone();
+            }
+
+            var isProp = selectedDrawable.Name.StartsWith("p_");
+            return Renderer.RenderDrawable(selectedDrawable, null, SelectedPed.RenderEntity, 0, selectedTexture, texture, SelectedPed.AnimClip, null, null, isProp, true);
+        }
+
+        private bool RenderBatchPedComponent(int componentIndex, TextureDictionary textureDictionary, Texture texture, Drawable drawableOverride)
+        {
+            var selectedPedDrawable = SelectedPed.Drawables[componentIndex];
+            var drawable = drawableOverride ?? selectedPedDrawable;
+            if (drawable == null) return false;
+
+            texture = texture ?? SelectPreviewTexture(textureDictionary) ?? SelectedPed.Textures[componentIndex];
+            if (texture == null) return false;
+
+            var ac = SelectedPed.AnimClip;
+            if (ac != null)
+            {
+                ac.EnableRootMotion = SelectedPed.EnableRootMotion;
+            }
+
+            if (SelectedPed.Skeleton != null)
+            {
+                if (drawable.Skeleton == null)
+                {
+                    drawable.Skeleton = SelectedPed.Skeleton;
+                }
+                else if (drawable.Skeleton != SelectedPed.Skeleton)
+                {
+                    var dskel = drawable.Skeleton;
+                    if (SelectedPed.Skeleton.Bones?.Items != null)
+                    {
+                        for (int b = 0; b < SelectedPed.Skeleton.Bones.Items.Length; b++)
+                        {
+                            var srcbone = SelectedPed.Skeleton.Bones.Items[b];
+                            var dstbone = srcbone;
+                            if (dskel.BonesMap.TryGetValue(srcbone.Tag, out dstbone))
+                            {
+                                if (srcbone == dstbone) break;
+                                dskel.Bones.Items[dstbone.Index] = srcbone;
+                                dskel.BonesMap[srcbone.Tag] = srcbone;
+                            }
+                        }
+                        dskel.BonesSorted = SelectedPed.Skeleton.BonesSorted;
+                    }
+                }
+            }
+
+            var isProp = drawable.Name.StartsWith("p_");
+            return Renderer.RenderDrawable(drawable, null, SelectedPed.RenderEntity, 0, textureDictionary, texture, ac, null, null, isProp, true);
         }
 
         private void FrameStableExportCamera(Drawable drawable, int exportSize, int selectedPedComponentIndex)
@@ -539,6 +654,49 @@ namespace CodeWalker
             return StableDefaultExportCameraPadding;
         }
 
+        private class BatchExportProgressForm : Form
+        {
+            private readonly Label statusLabel;
+            private readonly Label countLabel;
+            private readonly ProgressBar progressBar;
+            private readonly Button cancelButton;
+
+            public bool CancelRequested { get; private set; }
+
+            public BatchExportProgressForm()
+            {
+                Text = "Export All PNG";
+                Width = 520;
+                Height = 150;
+                FormBorderStyle = FormBorderStyle.FixedDialog;
+                MaximizeBox = false;
+                MinimizeBox = false;
+                StartPosition = FormStartPosition.CenterParent;
+
+                statusLabel = new Label { Left = 12, Top = 12, Width = 480, Height = 22, Text = "Preparing..." };
+                countLabel = new Label { Left = 12, Top = 38, Width = 480, Height = 22, Text = "0%" };
+                progressBar = new ProgressBar { Left = 12, Top = 66, Width = 480, Height = 20, Minimum = 0, Maximum = 100 };
+                cancelButton = new Button { Left = 392, Top = 92, Width = 100, Height = 26, Text = "Cancel" };
+                cancelButton.Click += (s, e) => { CancelRequested = true; cancelButton.Enabled = false; cancelButton.Text = "Cancelling..."; };
+
+                Controls.Add(statusLabel);
+                Controls.Add(countLabel);
+                Controls.Add(progressBar);
+                Controls.Add(cancelButton);
+            }
+
+            public void SetStatus(string status, int processed, int total, int exported, int failed)
+            {
+                if (IsDisposed) return;
+                total = Math.Max(1, total);
+                var percent = Math.Max(0, Math.Min(100, (int)Math.Round(processed * 100.0 / total)));
+                statusLabel.Text = status;
+                countLabel.Text = $"{percent}%  |  {processed}/{total} processed  |  {exported} exported  |  {failed} failed";
+                progressBar.Value = percent;
+                Refresh();
+            }
+        }
+
         private class BatchExportItem
         {
             public Drawable Drawable;
@@ -553,6 +711,12 @@ namespace CodeWalker
             public string DrawableName;
             public string TextureName;
             public string RelativePath;
+        }
+
+        private class BatchExportResult
+        {
+            public int ExportedCount;
+            public int FailedCount;
         }
     }
 }
