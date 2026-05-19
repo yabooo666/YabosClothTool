@@ -19,10 +19,13 @@ namespace CodeWalker
         private const float StableTorsoExportCameraPadding = 1.95f;
         private const float StableDefaultExportCameraPadding = 1.35f;
 
+        public event Action<string> ExportAllPngRequested;
+
         protected override void OnShown(EventArgs e)
         {
             base.OnShown(e);
             ReplaceExportButtonForStableLowrCapture();
+            AddSafeExportAllButton();
         }
 
         private void ReplaceExportButtonForStableLowrCapture()
@@ -66,6 +69,56 @@ namespace CodeWalker
             exportPreviewButton.BringToFront();
         }
 
+        private void AddSafeExportAllButton()
+        {
+            if (ToolsPanel == null)
+            {
+                return;
+            }
+            if (ToolsPanel.Controls.Find("ExportAllPreviewButton", false).Length > 0)
+            {
+                return;
+            }
+
+            var exportAllButton = new Button
+            {
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Location = new System.Drawing.Point(ToolsPanel.Width - 207, 3),
+                Name = "ExportAllPreviewButton",
+                Size = new System.Drawing.Size(105, 23),
+                TabIndex = 19,
+                Text = "Export All PNG",
+                UseVisualStyleBackColor = true
+            };
+            exportAllButton.Click += ExportAllPreviewButton_Click;
+
+            ToolsPanel.Controls.Add(exportAllButton);
+            exportAllButton.BringToFront();
+        }
+
+        private void ExportAllPreviewButton_Click(object sender, EventArgs e)
+        {
+            using (var folderDialog = new FolderBrowserDialog())
+            {
+                folderDialog.Description = "Choose folder for exported clothing PNGs";
+                folderDialog.ShowNewFolderButton = true;
+
+                if (folderDialog.ShowDialog(this) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                var handler = ExportAllPngRequested;
+                if (handler == null)
+                {
+                    MessageBox.Show(this, "Export All PNG is not connected to the cloth tool host yet.", "Export All PNG", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                handler(folderDialog.SelectedPath);
+            }
+        }
+
         private void StableExportPreviewButton_Click(object sender, EventArgs e)
         {
             using (var saveFileDialog = new SaveFileDialog())
@@ -95,7 +148,7 @@ namespace CodeWalker
             }
         }
 
-        private void ExportCurrentPreviewPngStable(string filePath)
+        public void ExportCurrentPreviewPngStable(string filePath)
         {
             if (Renderer == null || Renderer.DXMan == null || Renderer.DXMan.device == null || Renderer.DXMan.context == null || Renderer.DXMan.backbuffer == null)
             {
