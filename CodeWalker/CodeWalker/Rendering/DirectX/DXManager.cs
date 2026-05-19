@@ -31,6 +31,7 @@ namespace CodeWalker.Rendering
         private volatile bool Running = false;
         private volatile bool Rendering = false;
         private volatile bool Resizing = false;
+        public volatile bool RenderLoopPaused = false;
         private object syncroot = new object(); //for thread safety
         public int multisamplecount { get; private set; } = 4; //should be a setting..
         public int multisamplequality { get; private set; } = 0; //should be a setting...
@@ -70,9 +71,6 @@ namespace CodeWalker.Rendering
                 FeatureLevel[] levels = new FeatureLevel[] { FeatureLevel.Level_11_0, FeatureLevel.Level_10_1, FeatureLevel.Level_10_0 };
 
                 DeviceCreationFlags flags = DeviceCreationFlags.None;
-                //#if DEBUG
-                //    flags = DeviceCreationFlags.Debug;
-                //#endif
                 Device dev = null;
                 SwapChain sc = null;
                 Exception exc = null;
@@ -89,7 +87,7 @@ namespace CodeWalker.Rendering
                 {
                     multisamplecount = 1;
                     multisamplequality = 0;
-                    scd.SampleDescription = new SampleDescription(1, 0); //try no AA
+                    scd.SampleDescription = new SampleDescription(1, 0);
                     try
                     {
                         Device.CreateWithSwapChain(DriverType.Hardware, flags, levels, scd, out dev, out sc);
@@ -111,19 +109,11 @@ namespace CodeWalker.Rendering
                 device = dev;
                 swapchain = sc;
 
-
-                var factory = swapchain.GetParent<Factory>(); //ignore windows events...
+                var factory = swapchain.GetParent<Factory>();
                 factory.MakeWindowAssociation(form.Form.Handle, WindowAssociationFlags.IgnoreAll);
 
-
-
                 context = device.ImmediateContext;
-
-
-
                 CreateRenderBuffers();
-
-
 
                 dxform.Form.Load += Dxform_Load;
                 dxform.Form.FormClosing += Dxform_FormClosing;
@@ -145,31 +135,25 @@ namespace CodeWalker.Rendering
             }
         }
 
-
         private void Cleanup()
         {
             Running = false;
             int count = 0;
             while (Rendering && (count < 1000))
             {
-                Thread.Sleep(1); //try to gracefully exit...
+                Thread.Sleep(1);
                 count++;
             }
 
             dxform.CleanupScene();
 
             if (context != null) context.ClearState();
-
-            //dipose of all objects
             if (depthview != null) depthview.Dispose();
             if (depthbuffer != null) depthbuffer.Dispose();
             if (targetview != null) targetview.Dispose();
             if (backbuffer != null) backbuffer.Dispose();
             if (swapchain != null) swapchain.Dispose();
             if (context != null) context.Dispose();
-
-            //var objs = SharpDX.Diagnostics.ObjectTracker.FindActiveObjects();
-
             if (device != null) device.Dispose();
 
             GC.Collect();
@@ -180,7 +164,6 @@ namespace CodeWalker.Rendering
             if (backbuffer != null) backbuffer.Dispose();
             if (depthview != null) depthview.Dispose();
             if (depthbuffer != null) depthbuffer.Dispose();
-
 
             backbuffer = Texture2D.FromSwapChain<Texture2D>(swapchain, 0);
             targetview = new RenderTargetView(device, backbuffer);
@@ -267,7 +250,6 @@ namespace CodeWalker.Rendering
             }
         }
 
-
         public void Start()
         {
             dxform.InitScene(device);
@@ -276,31 +258,45 @@ namespace CodeWalker.Rendering
         private void StartRenderLoop()
         {
             Running = true;
-            new Thread(new ThreadStart(RenderLoop)).Start();
+            var thread = new Thread(new ThreadStart(RenderLoop));
+            thread.IsBackground = true;
+            thread.Start();
         }
         private void RenderLoop()
         {
             while (Running)
             {
+                if (RenderLoopPaused)
+                {
+                    Thread.Sleep(50);
+                    continue;
+                }
+
                 while (Resizing)
                 {
-                    swapchain.Present(1, PresentFlags.None); //just flip buffers when resizing; don't draw
+                    if (RenderLoopPaused)
+                    {
+                        Thread.Sleep(50);
+                        continue;
+                    }
+                    swapchain.Present(1, PresentFlags.None);
                 }
                 while (dxform.Form.WindowState == FormWindowState.Minimized)
                 {
-                    Thread.Sleep(10); //don't hog CPU when minimised
-                    if (dxform.Form.IsDisposed) return; //if closed while minimised
+                    Thread.Sleep(10);
+                    if (dxform.Form.IsDisposed) return;
                 }
                 if (Form.ActiveForm == null)
                 {
-                    Thread.Sleep(20); //reduce the FPS when the app isn't active (maybe this should be configurable?)
-                    if (context.IsDisposed) return; //if form closed while sleeping (eg from rightclick on taskbar)
+                    Thread.Sleep(20);
+                    if (context.IsDisposed) return;
                 }
 
                 Rendering = true;
                 if(!Monitor.TryEnter(syncroot, 50))
                 {
-                    Thread.Sleep(10); //don't hog CPU when not able to render...
+                    Rendering = false;
+                    Thread.Sleep(25);
                     continue;
                 }
 
@@ -322,7 +318,7 @@ namespace CodeWalker.Rendering
                     {
                         Monitor.Exit(syncroot);
                         Rendering = false;
-                        return; //the form was closed... stop!!
+                        return;
                     }
 
                     dxform.RenderScene(context);
@@ -331,18 +327,34 @@ namespace CodeWalker.Rendering
                     {
                         swapchain.Present(1, PresentFlags.None);
                     }
+                    catch (SharpDXException ex)
+                    {
+                        Running = false;
+                        Monitor.Exit(syncroot);
+                        Rendering = false;
+                        if (!dxform.Form.IsDisposed)
+                        {
+                            dxform.Form.BeginInvoke((Action)(() => MessageBox.Show(dxform.Form, "DirectX device was removed or reset by the GPU driver. Close and reopen the 3D preview before exporting again.\n\n" + ex.Message, "DirectX device removed", MessageBoxButtons.OK, MessageBoxIcon.Warning)));
+                        }
+                        return;
+                    }
                     catch (Exception ex)
                     {
-                        MessageBox.Show("Error presenting swap chain!\n" + ex.ToString());
+                        Running = false;
+                        Monitor.Exit(syncroot);
+                        Rendering = false;
+                        if (!dxform.Form.IsDisposed)
+                        {
+                            dxform.Form.BeginInvoke((Action)(() => MessageBox.Show(dxform.Form, "Error presenting swap chain. Rendering loop stopped to prevent driver spam.\n\n" + ex.Message, "DirectX render error", MessageBoxButtons.OK, MessageBoxIcon.Warning)));
+                        }
+                        return;
                     }
                 }
 
                 Monitor.Exit(syncroot);
                 Rendering = false;
-
             }
         }
-
 
         public void ClearRenderTarget(DeviceContext ctx)
         {
@@ -353,13 +365,12 @@ namespace CodeWalker.Rendering
         }
         public void ClearDepth(DeviceContext ctx)
         {
-            ctx.ClearDepthStencilView(depthviewOverride ?? depthview, DepthStencilClearFlags.Depth, 0.0f, 0);
+            ctx.ClearDepthStencilView(depthviewOverride ?? depthview);
         }
         public void SetDefaultRenderTarget(DeviceContext ctx)
         {
             ctx.OutputMerger.SetRenderTargets(depthviewOverride ?? depthview, targetviewOverride ?? targetview);
             ctx.Rasterizer.SetViewport(viewportOverride ?? Viewport);
-            //ctx.Rasterizer.State = RasterizerStateSolid;
         }
 
         public void SetRenderTargetOverride(RenderTargetView targetView, DepthStencilView depthView, ViewportF viewport)
@@ -375,10 +386,5 @@ namespace CodeWalker.Rendering
             depthviewOverride = null;
             viewportOverride = null;
         }
-
-
-
-
-
     }
 }
