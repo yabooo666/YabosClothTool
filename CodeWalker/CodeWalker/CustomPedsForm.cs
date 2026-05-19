@@ -348,7 +348,7 @@ namespace CodeWalker
 
                     stagingTexture = new Texture2D(device, stagingDesc);
                     context.CopyResource(exportTexture, stagingTexture);
-                    SaveTextureToPng(context, stagingTexture, filePath);
+                    SaveTextureToPng(context, stagingTexture, filePath, depthTexture, selectedPedComponentIndex);
                 }
                 finally
                 {
@@ -582,7 +582,7 @@ namespace CodeWalker
             public bool UpdateProj;
         }
 
-        private static void SaveTextureToPng(DeviceContext context, Texture2D texture, string filePath)
+        private static void SaveTextureToPng(DeviceContext context, Texture2D texture, string filePath, Texture2D depthTexture = null, int selectedPedComponentIndex = -1)
         {
             DataStream dataStream = null;
             var textureDesc = texture.Description;
@@ -590,20 +590,35 @@ namespace CodeWalker
 
             try
             {
+                var stride = textureDesc.Width * 4;
+                var pixels = new byte[stride * textureDesc.Height];
+                for (int y = 0; y < textureDesc.Height; y++)
+                {
+                    dataStream.Position = y * dataBox.RowPitch;
+                    dataStream.Read(pixels, y * stride, stride);
+                }
+
+                if (!ApplyAlphaFromDepth(context, depthTexture, pixels, textureDesc.Width, textureDesc.Height))
+                {
+                    ApplyAlphaFromRenderedPixels(pixels);
+                }
+                FitVisiblePixelsToSquare(pixels, textureDesc.Width, textureDesc.Height, selectedPedComponentIndex);
+
                 using (var imagingFactory = new SharpDX.WIC.ImagingFactory())
+                using (var pixelStream = DataStream.Create(pixels, true, false))
                 using (var bitmap = new SharpDX.WIC.Bitmap(
                     imagingFactory,
                     textureDesc.Width,
                     textureDesc.Height,
-                    GetWicPixelFormat(textureDesc.Format),
-                    new DataRectangle(dataStream.DataPointer, dataBox.RowPitch)))
+                    SharpDX.WIC.PixelFormat.Format32bppRGBA,
+                    new DataRectangle(pixelStream.DataPointer, stride)))
                 using (var outputStream = new FileStream(filePath, FileMode.Create, FileAccess.Write))
                 using (var bitmapEncoder = new SharpDX.WIC.PngBitmapEncoder(imagingFactory, outputStream))
                 using (var bitmapFrameEncode = new SharpDX.WIC.BitmapFrameEncode(bitmapEncoder))
                 {
                     bitmapFrameEncode.Initialize();
                     bitmapFrameEncode.SetSize(textureDesc.Width, textureDesc.Height);
-                    var pixelFormat = GetWicPixelFormat(textureDesc.Format);
+                    var pixelFormat = SharpDX.WIC.PixelFormat.Format32bppRGBA;
                     bitmapFrameEncode.SetPixelFormat(ref pixelFormat);
                     bitmapFrameEncode.WriteSource(bitmap);
                     bitmapFrameEncode.Commit();
@@ -616,6 +631,168 @@ namespace CodeWalker
                 if (dataStream != null)
                 {
                     dataStream.Dispose();
+                }
+            }
+        }
+
+        private static bool ApplyAlphaFromDepth(DeviceContext context, Texture2D depthTexture, byte[] pixels, int width, int height)
+        {
+            if (depthTexture == null)
+            {
+                return false;
+            }
+
+            Texture2D depthStagingTexture = null;
+            DataStream depthStream = null;
+            try
+            {
+                var depthDesc = depthTexture.Description;
+                depthDesc.BindFlags = BindFlags.None;
+                depthDesc.CpuAccessFlags = CpuAccessFlags.Read;
+                depthDesc.Usage = ResourceUsage.Staging;
+                depthDesc.OptionFlags = ResourceOptionFlags.None;
+
+                depthStagingTexture = new Texture2D(depthTexture.Device, depthDesc);
+                context.CopyResource(depthTexture, depthStagingTexture);
+                var depthBox = context.MapSubresource(depthStagingTexture, 0, 0, MapMode.Read, SharpDX.Direct3D11.MapFlags.None, out depthStream);
+
+                var hasVisiblePixels = false;
+                for (int y = 0; y < height; y++)
+                {
+                    depthStream.Position = y * depthBox.RowPitch;
+                    for (int x = 0; x < width; x++)
+                    {
+                        var depth = depthStream.Read<float>();
+                        var alpha = depth > 0.000001f ? (byte)255 : (byte)0;
+                        pixels[((y * width + x) * 4) + 3] = alpha;
+                        hasVisiblePixels = hasVisiblePixels || alpha > 0;
+                    }
+                }
+
+                context.UnmapSubresource(depthStagingTexture, 0);
+                return hasVisiblePixels;
+            }
+            catch
+            {
+                return false;
+            }
+            finally
+            {
+                if (depthStream != null)
+                {
+                    depthStream.Dispose();
+                }
+                if (depthStagingTexture != null)
+                {
+                    depthStagingTexture.Dispose();
+                }
+            }
+        }
+
+        private static void ApplyAlphaFromRenderedPixels(byte[] pixels)
+        {
+            for (int i = 0; i < pixels.Length; i += 4)
+            {
+                var maxRgb = Math.Max(pixels[i], Math.Max(pixels[i + 1], pixels[i + 2]));
+                pixels[i + 3] = (byte)(maxRgb > 2 ? 255 : 0);
+            }
+        }
+
+        private static void FitVisiblePixelsToSquare(byte[] pixels, int width, int height, int selectedPedComponentIndex)
+        {
+            var visibleFill = selectedPedComponentIndex == 4 ? 0.96f : 0.86f;
+            var minX = width;
+            var minY = height;
+            var maxX = -1;
+            var maxY = -1;
+
+            FindVisiblePixelBounds(pixels, width, height, true, ref minX, ref minY, ref maxX, ref maxY);
+            if (maxX < 0 || maxY < 0)
+            {
+                FindVisiblePixelBounds(pixels, width, height, false, ref minX, ref minY, ref maxX, ref maxY);
+            }
+
+            if (maxX < 0 || maxY < 0)
+            {
+                return;
+            }
+
+            var sourceWidth = maxX - minX + 1;
+            var sourceHeight = maxY - minY + 1;
+            var targetMaxSize = Math.Max(1, (int)Math.Round(Math.Min(width, height) * visibleFill));
+            var scale = targetMaxSize / (float)Math.Max(sourceWidth, sourceHeight);
+            var targetWidth = Math.Max(1, (int)Math.Round(sourceWidth * scale));
+            var targetHeight = Math.Max(1, (int)Math.Round(sourceHeight * scale));
+            var targetMinX = (width - targetWidth) / 2;
+            var targetMinY = (height - targetHeight) / 2;
+
+            var fittedPixels = new byte[pixels.Length];
+            for (int y = 0; y < targetHeight; y++)
+            {
+                var targetY = targetMinY + y;
+                if (targetY < 0 || targetY >= height)
+                {
+                    continue;
+                }
+
+                var sourceY = minY + Math.Min(sourceHeight - 1, (int)((y + 0.5f) / scale));
+                for (int x = 0; x < targetWidth; x++)
+                {
+                    var targetX = targetMinX + x;
+                    if (targetX < 0 || targetX >= width)
+                    {
+                        continue;
+                    }
+
+                    var sourceX = minX + Math.Min(sourceWidth - 1, (int)((x + 0.5f) / scale));
+                    var sourceIndex = (sourceY * width + sourceX) * 4;
+                    if (pixels[sourceIndex + 3] == 0)
+                    {
+                        continue;
+                    }
+
+                    var targetIndex = (targetY * width + targetX) * 4;
+                    fittedPixels[targetIndex] = pixels[sourceIndex];
+                    fittedPixels[targetIndex + 1] = pixels[sourceIndex + 1];
+                    fittedPixels[targetIndex + 2] = pixels[sourceIndex + 2];
+                    fittedPixels[targetIndex + 3] = pixels[sourceIndex + 3];
+                }
+            }
+
+            System.Buffer.BlockCopy(fittedPixels, 0, pixels, 0, pixels.Length);
+        }
+
+        private static void FindVisiblePixelBounds(byte[] pixels, int width, int height, bool requireColor, ref int minX, ref int minY, ref int maxX, ref int maxY)
+        {
+            minX = width;
+            minY = height;
+            maxX = -1;
+            maxY = -1;
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    var index = (y * width + x) * 4;
+                    var alpha = pixels[index + 3];
+                    if (alpha == 0)
+                    {
+                        continue;
+                    }
+
+                    if (requireColor)
+                    {
+                        var maxRgb = Math.Max(pixels[index], Math.Max(pixels[index + 1], pixels[index + 2]));
+                        if (maxRgb <= 4)
+                        {
+                            continue;
+                        }
+                    }
+
+                    minX = Math.Min(minX, x);
+                    minY = Math.Min(minY, y);
+                    maxX = Math.Max(maxX, x);
+                    maxY = Math.Max(maxY, y);
                 }
             }
         }
