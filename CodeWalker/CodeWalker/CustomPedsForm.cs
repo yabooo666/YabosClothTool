@@ -109,6 +109,17 @@ namespace CodeWalker
         private System.Windows.Forms.Timer autoRotateTimer;
         private float autoRotateAngle = 0f;
         private const float AutoRotateSpeed = 1.0f;
+        private const int ExportImageSize = 768;
+        private const int UpprComponentIndex = 3;
+        private const int LowrComponentIndex = 4;
+        private const int JbibComponentIndex = 11;
+        private const float DefaultVisibleFill = 0.86f;
+        private const float TorsoVisibleFill = 0.78f;
+        private const float LowrVisibleFill = 0.82f;
+        private const float LowrVerticalOffset = 0.03f;
+        private const float DefaultExportCameraPadding = 1.35f;
+        private const float TorsoExportCameraPadding = 1.75f;
+        private const float LowrExportCameraPadding = 1.65f;
 
         private volatile bool _inputsUpdatePending;
         private Throttler throttler;
@@ -265,7 +276,12 @@ namespace CodeWalker
                 throw new InvalidOperationException("No selected drawable is available for export.");
             }
 
-            var selectedPedComponentIndex = GetSelectedPedComponentIndex(selectedDrawable);
+            var selectedPedComponentIndex = GetComponentIndexFromDrawableName(selectedDrawable.Name);
+            var forceSelectedDrawableIntoComponent = selectedPedComponentIndex >= 0;
+            if (selectedPedComponentIndex < 0)
+            {
+                selectedPedComponentIndex = GetSelectedPedComponentIndex(selectedDrawable);
+            }
             if (selectedPedComponentIndex < 0 && selectedTexture == null && liveTexturePath == null)
             {
                 throw new InvalidOperationException("No texture is available for the selected drawable.");
@@ -275,7 +291,7 @@ namespace CodeWalker
             var device = dxman.device;
             var context = dxman.context;
             var backbufferDesc = dxman.backbuffer.Description;
-            var exportSize = Math.Max(256, Math.Max(backbufferDesc.Width, backbufferDesc.Height));
+            var exportSize = ExportImageSize;
             Texture2D exportTexture = null;
             Texture2D depthTexture = null;
             Texture2D stagingTexture = null;
@@ -290,8 +306,14 @@ namespace CodeWalker
                 }
 
                 var cameraState = CaptureCameraState();
+                PedComponentExportState componentExportState = null;
                 try
                 {
+                    if (forceSelectedDrawableIntoComponent)
+                    {
+                        componentExportState = ApplyTemporaryExportPedComponent(selectedPedComponentIndex, selectedDrawable, selectedTexture);
+                    }
+
                     var exportDesc = new Texture2DDescription
                     {
                         Width = exportSize,
@@ -326,13 +348,15 @@ namespace CodeWalker
                     var viewport = new ViewportF(0.0f, 0.0f, exportSize, exportSize, 0.0f, 1.0f);
                     dxman.SetRenderTargetOverride(exportTargetView, exportDepthView, viewport);
 
-                    var exportDrawable = selectedPedComponentIndex >= 0 ? SelectedPed.Drawables[selectedPedComponentIndex] : selectedDrawable;
-                    FrameExportCamera(exportDrawable, exportSize);
+                    var exportDrawable = forceSelectedDrawableIntoComponent
+                        ? selectedDrawable
+                        : (selectedPedComponentIndex >= 0 ? SelectedPed.Drawables[selectedPedComponentIndex] : selectedDrawable);
+                    FrameExportCamera(exportDrawable ?? selectedDrawable, exportSize, selectedPedComponentIndex);
                     Renderer.BeginRender(context);
                     context.ClearRenderTargetView(exportTargetView, new Color(0, 0, 0, 0));
                     context.ClearDepthStencilView(exportDepthView, DepthStencilClearFlags.Depth, 0.0f, 0);
 
-                    if (!RenderSelectedExportItem(selectedDrawable, selectedTexture, selectedPedComponentIndex))
+                    if (!RenderSelectedExportItemWithRetry(selectedDrawable, selectedTexture, selectedPedComponentIndex))
                     {
                         throw new InvalidOperationException("The selected drawable is not ready to render yet. Wait for it to appear in the preview, then export again.");
                     }
@@ -354,6 +378,10 @@ namespace CodeWalker
                 {
                     dxman.ClearRenderTargetOverride();
                     RestoreCameraState(cameraState);
+                    if (componentExportState != null)
+                    {
+                        componentExportState.Restore(SelectedPed);
+                    }
                     if (stagingTexture != null)
                     {
                         stagingTexture.Dispose();
@@ -376,6 +404,22 @@ namespace CodeWalker
                     }
                 }
             }
+        }
+
+        private bool RenderSelectedExportItemWithRetry(Drawable selectedDrawable, TextureDictionary selectedTexture, int selectedPedComponentIndex)
+        {
+            for (int i = 0; i < 8; i++)
+            {
+                if (RenderSelectedExportItem(selectedDrawable, selectedTexture, selectedPedComponentIndex))
+                {
+                    return true;
+                }
+
+                Renderer.RenderableCache.ContentThreadProc();
+                Renderer.RenderableCache.RenderThreadSync();
+            }
+
+            return false;
         }
 
         private int GetSelectedPedComponentIndex(Drawable selectedDrawable)
@@ -401,6 +445,113 @@ namespace CodeWalker
             return -1;
         }
 
+        private static int GetComponentIndexFromDrawableName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return -1;
+            }
+
+            var lowerName = name.ToLowerInvariant();
+            if (lowerName.StartsWith("p_head") || lowerName.Contains("_p_head") ||
+                lowerName.StartsWith("p_eyes") || lowerName.Contains("_p_eyes"))
+            {
+                return -1;
+            }
+
+            string[] prefixes =
+            {
+                "head",
+                "berd",
+                "hair",
+                "uppr",
+                "lowr",
+                "hand",
+                "feet",
+                "teef",
+                "accs",
+                "task",
+                "decl",
+                "jbib"
+            };
+
+            for (int i = 0; i < prefixes.Length; i++)
+            {
+                var prefix = prefixes[i];
+                if (lowerName == prefix ||
+                    lowerName.StartsWith(prefix + "_") ||
+                    lowerName.Contains("_" + prefix + "_") ||
+                    lowerName.EndsWith("_" + prefix))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private PedComponentExportState ApplyTemporaryExportPedComponent(int componentIndex, Drawable selectedDrawable, TextureDictionary fallbackTextureDictionary)
+        {
+            var state = new PedComponentExportState(SelectedPed, componentIndex);
+            var fallbackTexture = fallbackTextureDictionary?.Textures?.data_items?.FirstOrDefault();
+            var textureName = fallbackTexture?.Name;
+
+            if (!string.IsNullOrWhiteSpace(selectedDrawable?.Name) && !string.IsNullOrWhiteSpace(textureName))
+            {
+                SelectedPed.SetComponentDrawable(componentIndex, selectedDrawable.Name, textureName, GameFileCache);
+            }
+
+            var loadedComponentData = SelectedPed.Drawables[componentIndex]?.Name == selectedDrawable?.Name;
+            if (selectedDrawable != null)
+            {
+                SelectedPed.Drawables[componentIndex] = selectedDrawable;
+            }
+            if (fallbackTexture != null)
+            {
+                SelectedPed.Textures[componentIndex] = fallbackTexture;
+            }
+            if (!string.IsNullOrWhiteSpace(selectedDrawable?.Name))
+            {
+                SelectedPed.DrawableNames[componentIndex] = selectedDrawable.Name;
+            }
+            if (!loadedComponentData)
+            {
+                SelectedPed.Clothes[componentIndex] = null;
+                SelectedPed.Expressions[componentIndex] = null;
+            }
+
+            return state;
+        }
+
+        private class PedComponentExportState
+        {
+            private readonly int componentIndex;
+            private readonly string drawableName;
+            private readonly Drawable drawable;
+            private readonly Texture texture;
+            private readonly Expression expression;
+            private readonly ClothInstance cloth;
+
+            public PedComponentExportState(Ped ped, int componentIndex)
+            {
+                this.componentIndex = componentIndex;
+                drawableName = ped.DrawableNames[componentIndex];
+                drawable = ped.Drawables[componentIndex];
+                texture = ped.Textures[componentIndex];
+                expression = ped.Expressions[componentIndex];
+                cloth = ped.Clothes[componentIndex];
+            }
+
+            public void Restore(Ped ped)
+            {
+                ped.DrawableNames[componentIndex] = drawableName;
+                ped.Drawables[componentIndex] = drawable;
+                ped.Textures[componentIndex] = texture;
+                ped.Expressions[componentIndex] = expression;
+                ped.Clothes[componentIndex] = cloth;
+            }
+        }
+
         private bool RenderSelectedExportItem(Drawable selectedDrawable, TextureDictionary selectedTexture, int selectedPedComponentIndex)
         {
             if (selectedPedComponentIndex >= 0)
@@ -411,22 +562,20 @@ namespace CodeWalker
             return RenderSelectedItem(selectedDrawable, selectedTexture, false);
         }
 
-        private bool RenderSelectedPedComponent(int componentIndex, TextureDictionary fallbackTextureDictionary)
+        private bool RenderSelectedPedComponent(int componentIndex, TextureDictionary fallbackTextureDictionary, Drawable drawableOverride = null)
         {
-            var drawable = SelectedPed.Drawables[componentIndex];
+            var selectedPedDrawable = SelectedPed.Drawables[componentIndex];
+            var drawable = drawableOverride ?? selectedPedDrawable;
             if (drawable == null)
             {
                 return false;
             }
 
-            var texture = SelectedPed.Textures[componentIndex];
+            var useOverrideTexture = drawableOverride != null && !ReferenceEquals(drawableOverride, selectedPedDrawable);
+            var texture = useOverrideTexture ? null : SelectedPed.Textures[componentIndex];
             if (texture == null && fallbackTextureDictionary?.Textures?.data_items?.Length > 0)
             {
                 texture = fallbackTextureDictionary.Textures.data_items[0];
-            }
-            if (texture == null)
-            {
-                return false;
             }
 
             var ac = SelectedPed.AnimClip;
@@ -555,18 +704,82 @@ namespace CodeWalker
             camera.UpdateProj = state.UpdateProj;
         }
 
-        private void FrameExportCamera(Drawable drawable, int exportSize)
+        private void FrameExportCamera(Drawable drawable, int exportSize, int selectedPedComponentIndex)
         {
-            var radius = Math.Max(0.05f, drawable.BoundingSphereRadius);
-            var distance = (float)(radius / Math.Tan(camera.FieldOfView * 0.5f)) * 1.35f;
+            var bounds = GetDrawableExportBounds(drawable);
+            var radius = Math.Max(0.05f, bounds.Radius);
+            var cameraPadding = GetExportCameraPadding(selectedPedComponentIndex);
+            var distance = (float)(radius / Math.Tan(camera.FieldOfView * 0.5f)) * cameraPadding;
 
             camera.OnWindowResize(exportSize, exportSize);
-            camera.FollowEntity.Position = drawable.BoundingCenter;
+            camera.FollowEntity.Position = bounds.Center;
             camera.TargetDistance = distance;
             camera.CurrentDistance = distance;
             camera.TargetRotation = camera.CurrentRotation;
             camera.UpdateProj = true;
             camera.Update(0.0f);
+        }
+
+        private static DrawableExportBounds GetDrawableExportBounds(Drawable drawable)
+        {
+            var min = drawable.BoundingBoxMin;
+            var max = drawable.BoundingBoxMax;
+            var size = max - min;
+
+            if (IsValidExportBounds(min, max, size))
+            {
+                return new DrawableExportBounds
+                {
+                    Center = (min + max) * 0.5f,
+                    Radius = size.Length() * 0.5f
+                };
+            }
+
+            return new DrawableExportBounds
+            {
+                Center = drawable.BoundingCenter,
+                Radius = drawable.BoundingSphereRadius
+            };
+        }
+
+        private static bool IsValidExportBounds(Vector3 min, Vector3 max, Vector3 size)
+        {
+            if (!IsFinite(min) || !IsFinite(max) || !IsFinite(size))
+            {
+                return false;
+            }
+
+            return size.X > 0.0001f && size.Y > 0.0001f && size.Z > 0.0001f;
+        }
+
+        private static bool IsFinite(Vector3 value)
+        {
+            return IsFinite(value.X) && IsFinite(value.Y) && IsFinite(value.Z);
+        }
+
+        private static bool IsFinite(float value)
+        {
+            return !float.IsNaN(value) && !float.IsInfinity(value);
+        }
+
+        private struct DrawableExportBounds
+        {
+            public Vector3 Center;
+            public float Radius;
+        }
+
+        private static float GetExportCameraPadding(int selectedPedComponentIndex)
+        {
+            if (selectedPedComponentIndex == LowrComponentIndex)
+            {
+                return LowrExportCameraPadding;
+            }
+            if (selectedPedComponentIndex == UpprComponentIndex || selectedPedComponentIndex == JbibComponentIndex)
+            {
+                return TorsoExportCameraPadding;
+            }
+
+            return DefaultExportCameraPadding;
         }
 
         private class CameraExportState
@@ -700,7 +913,7 @@ namespace CodeWalker
 
         private static void FitVisiblePixelsToSquare(byte[] pixels, int width, int height, int selectedPedComponentIndex)
         {
-            var visibleFill = selectedPedComponentIndex == 4 ? 0.96f : 0.86f;
+            var visibleFill = GetVisibleFill(selectedPedComponentIndex);
             var minX = width;
             var minY = height;
             var maxX = -1;
@@ -725,6 +938,11 @@ namespace CodeWalker
             var targetHeight = Math.Max(1, (int)Math.Round(sourceHeight * scale));
             var targetMinX = (width - targetWidth) / 2;
             var targetMinY = (height - targetHeight) / 2;
+            if (selectedPedComponentIndex == LowrComponentIndex)
+            {
+                targetMinY += (int)(height * LowrVerticalOffset);
+                targetMinY = Math.Max(0, Math.Min(height - targetHeight, targetMinY));
+            }
 
             var fittedPixels = new byte[pixels.Length];
             for (int y = 0; y < targetHeight; y++)
@@ -735,7 +953,7 @@ namespace CodeWalker
                     continue;
                 }
 
-                var sourceY = minY + Math.Min(sourceHeight - 1, (int)((y + 0.5f) / scale));
+                var sourceY = minY + ((y + 0.5f) / scale) - 0.5f;
                 for (int x = 0; x < targetWidth; x++)
                 {
                     var targetX = targetMinX + x;
@@ -744,22 +962,53 @@ namespace CodeWalker
                         continue;
                     }
 
-                    var sourceX = minX + Math.Min(sourceWidth - 1, (int)((x + 0.5f) / scale));
-                    var sourceIndex = (sourceY * width + sourceX) * 4;
-                    if (pixels[sourceIndex + 3] == 0)
-                    {
-                        continue;
-                    }
-
+                    var sourceX = minX + ((x + 0.5f) / scale) - 0.5f;
                     var targetIndex = (targetY * width + targetX) * 4;
-                    fittedPixels[targetIndex] = pixels[sourceIndex];
-                    fittedPixels[targetIndex + 1] = pixels[sourceIndex + 1];
-                    fittedPixels[targetIndex + 2] = pixels[sourceIndex + 2];
-                    fittedPixels[targetIndex + 3] = pixels[sourceIndex + 3];
+                    SampleBilinearPixel(pixels, fittedPixels, width, height, sourceX, sourceY, targetIndex);
                 }
             }
 
             System.Buffer.BlockCopy(fittedPixels, 0, pixels, 0, pixels.Length);
+        }
+
+        private static float GetVisibleFill(int selectedPedComponentIndex)
+        {
+            if (selectedPedComponentIndex == LowrComponentIndex)
+            {
+                return LowrVisibleFill;
+            }
+            if (selectedPedComponentIndex == UpprComponentIndex || selectedPedComponentIndex == JbibComponentIndex)
+            {
+                return TorsoVisibleFill;
+            }
+
+            return DefaultVisibleFill;
+        }
+
+        private static void SampleBilinearPixel(byte[] sourcePixels, byte[] targetPixels, int width, int height, float sourceX, float sourceY, int targetIndex)
+        {
+            sourceX = Math.Max(0.0f, Math.Min(width - 1, sourceX));
+            sourceY = Math.Max(0.0f, Math.Min(height - 1, sourceY));
+
+            var x0 = (int)Math.Floor(sourceX);
+            var y0 = (int)Math.Floor(sourceY);
+            var x1 = Math.Min(width - 1, x0 + 1);
+            var y1 = Math.Min(height - 1, y0 + 1);
+            var tx = sourceX - x0;
+            var ty = sourceY - y0;
+
+            var i00 = (y0 * width + x0) * 4;
+            var i10 = (y0 * width + x1) * 4;
+            var i01 = (y1 * width + x0) * 4;
+            var i11 = (y1 * width + x1) * 4;
+
+            for (int i = 0; i < 4; i++)
+            {
+                var top = (sourcePixels[i00 + i] * (1.0f - tx)) + (sourcePixels[i10 + i] * tx);
+                var bottom = (sourcePixels[i01 + i] * (1.0f - tx)) + (sourcePixels[i11 + i] * tx);
+                var value = (top * (1.0f - ty)) + (bottom * ty);
+                targetPixels[targetIndex + i] = (byte)Math.Max(0, Math.Min(255, (int)Math.Round(value)));
+            }
         }
 
         private static void FindVisiblePixelBounds(byte[] pixels, int width, int height, bool requireColor, ref int minX, ref int minY, ref int maxX, ref int maxY)
