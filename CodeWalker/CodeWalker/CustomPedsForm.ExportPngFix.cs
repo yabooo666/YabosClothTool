@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
 using System.Windows.Forms;
 using CodeWalker.GameFiles;
 using SharpDX;
@@ -23,6 +26,7 @@ namespace CodeWalker
         {
             base.OnShown(e);
             ReplaceExportButtonForStableLowrCapture();
+            AddExportAllPreviewButton();
         }
 
         private void ReplaceExportButtonForStableLowrCapture()
@@ -66,6 +70,34 @@ namespace CodeWalker
             exportPreviewButton.BringToFront();
         }
 
+        private void AddExportAllPreviewButton()
+        {
+            if (ToolsPanel == null)
+            {
+                return;
+            }
+
+            if (ToolsPanel.Controls.Find("ExportAllPreviewButton", false).Length > 0)
+            {
+                return;
+            }
+
+            var exportAllButton = new Button
+            {
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Location = new System.Drawing.Point(ToolsPanel.Width - 207, 3),
+                Name = "ExportAllPreviewButton",
+                Size = new System.Drawing.Size(105, 23),
+                TabIndex = 19,
+                Text = "Export All PNG",
+                UseVisualStyleBackColor = true
+            };
+            exportAllButton.Click += ExportAllPreviewButton_Click;
+
+            ToolsPanel.Controls.Add(exportAllButton);
+            exportAllButton.BringToFront();
+        }
+
         private void StableExportPreviewButton_Click(object sender, EventArgs e)
         {
             using (var saveFileDialog = new SaveFileDialog())
@@ -95,15 +127,269 @@ namespace CodeWalker
             }
         }
 
+        private void ExportAllPreviewButton_Click(object sender, EventArgs e)
+        {
+            using (var folderDialog = new FolderBrowserDialog())
+            {
+                folderDialog.Description = "Choose folder for exported clothing PNGs";
+                folderDialog.ShowNewFolderButton = true;
+
+                if (folderDialog.ShowDialog(this) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                try
+                {
+                    var exportedCount = ExportAllLoadedPreviewPngs(folderDialog.SelectedPath);
+                    UpdateStatus($"Exported {exportedCount} clothing PNGs");
+                    MessageBox.Show(this, $"Exported {exportedCount} clothing PNGs.", "Export All PNG", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                catch (Exception ex)
+                {
+                    LogError("Batch preview PNG export failed: " + ex);
+                    MessageBox.Show(this, "Unable to batch export preview PNGs:\n" + ex.Message, "Export All PNG", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
+
+        private int ExportAllLoadedPreviewPngs(string outputRoot)
+        {
+            Directory.CreateDirectory(outputRoot);
+
+            var exportItems = GetLoadedExportItems().ToList();
+            if (exportItems.Count == 0)
+            {
+                throw new InvalidOperationException("No loaded drawables are available for batch export.");
+            }
+
+            var exported = new List<BatchExportRecord>();
+            var usedDrawableIdsByComponent = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
+            for (var drawableOrder = 0; drawableOrder < exportItems.Count; drawableOrder++)
+            {
+                var item = exportItems[drawableOrder];
+                var componentName = GetComponentDirectoryName(item.Drawable?.Name);
+                if (componentName == null)
+                {
+                    continue;
+                }
+
+                var textures = GetTextureVariants(item.TextureDictionary).ToList();
+                if (textures.Count == 0)
+                {
+                    continue;
+                }
+
+                var drawableId = GetDrawableExportId(item.Drawable?.Name, drawableOrder);
+                drawableId = EnsureUniqueDrawableExportId(componentName, drawableId, usedDrawableIdsByComponent);
+
+                var drawableFolder = Path.Combine(outputRoot, componentName, drawableId);
+                Directory.CreateDirectory(drawableFolder);
+
+                for (var textureIndex = 0; textureIndex < textures.Count; textureIndex++)
+                {
+                    var texture = textures[textureIndex];
+                    var textureId = textureIndex.ToString("000");
+                    var filePath = Path.Combine(drawableFolder, textureId + ".png");
+
+                    UpdateStatus($"Exporting {componentName}/{drawableId}/{textureId}.png");
+                    ExportDrawablePreviewPngStable(filePath, item.Drawable, item.TextureDictionary, texture);
+
+                    exported.Add(new BatchExportRecord
+                    {
+                        Component = componentName,
+                        DrawableId = drawableId,
+                        TextureId = textureId,
+                        DrawableName = item.Drawable?.Name ?? string.Empty,
+                        TextureName = texture?.Name ?? string.Empty,
+                        RelativePath = componentName + "/" + drawableId + "/" + textureId + ".png"
+                    });
+                }
+            }
+
+            WriteBatchExportManifest(outputRoot, exported);
+            return exported.Count;
+        }
+
+        private IEnumerable<BatchExportItem> GetLoadedExportItems()
+        {
+            var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var drawable in LoadedDrawables.Values)
+            {
+                if (drawable == null || !seenNames.Add(drawable.Name ?? string.Empty))
+                {
+                    continue;
+                }
+
+                yield return new BatchExportItem
+                {
+                    Drawable = drawable,
+                    TextureDictionary = GetSelectedExportTexture(drawable)
+                };
+            }
+
+            foreach (var drawable in SavedDrawables.Values)
+            {
+                if (drawable == null || !seenNames.Add(drawable.Name ?? string.Empty))
+                {
+                    continue;
+                }
+
+                yield return new BatchExportItem
+                {
+                    Drawable = drawable,
+                    TextureDictionary = GetSelectedExportTexture(drawable)
+                };
+            }
+        }
+
+        private static IEnumerable<Texture> GetTextureVariants(TextureDictionary textureDictionary)
+        {
+            var textures = textureDictionary?.Textures?.data_items;
+            if (textures == null)
+            {
+                yield break;
+            }
+
+            foreach (var texture in textures)
+            {
+                if (texture != null)
+                {
+                    yield return texture;
+                }
+            }
+        }
+
+        private static string GetComponentDirectoryName(string drawableName)
+        {
+            var componentIndex = GetComponentIndexFromDrawableName(drawableName);
+            switch (componentIndex)
+            {
+                case 0: return "head";
+                case 1: return "berd";
+                case 2: return "hair";
+                case 3: return "uppr";
+                case 4: return "lowr";
+                case 5: return "hand";
+                case 6: return "feet";
+                case 7: return "teef";
+                case 8: return "accs";
+                case 9: return "task";
+                case 10: return "decl";
+                case 11: return "jbib";
+                default: return null;
+            }
+        }
+
+        private static string GetDrawableExportId(string drawableName, int fallbackIndex)
+        {
+            var parsedId = TryGetLastNumericId(drawableName);
+            return parsedId >= 0 ? parsedId.ToString("000") : fallbackIndex.ToString("000");
+        }
+
+        private static int TryGetLastNumericId(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return -1;
+            }
+
+            var matches = Regex.Matches(value, "\\d+");
+            if (matches.Count == 0)
+            {
+                return -1;
+            }
+
+            if (int.TryParse(matches[matches.Count - 1].Value, out var id))
+            {
+                return id;
+            }
+
+            return -1;
+        }
+
+        private static string EnsureUniqueDrawableExportId(string componentName, string drawableId, Dictionary<string, HashSet<string>> usedDrawableIdsByComponent)
+        {
+            if (!usedDrawableIdsByComponent.TryGetValue(componentName, out var usedIds))
+            {
+                usedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                usedDrawableIdsByComponent[componentName] = usedIds;
+            }
+
+            if (usedIds.Add(drawableId))
+            {
+                return drawableId;
+            }
+
+            var suffix = 1;
+            string candidate;
+            do
+            {
+                candidate = drawableId + "_" + suffix.ToString("000");
+                suffix++;
+            }
+            while (!usedIds.Add(candidate));
+
+            return candidate;
+        }
+
+        private void WriteBatchExportManifest(string outputRoot, List<BatchExportRecord> records)
+        {
+            var manifestPath = Path.Combine(outputRoot, "export_manifest.json");
+            var json = new StringBuilder();
+            json.AppendLine("{");
+            json.AppendLine("  \"ped\": \"" + EscapeJson(PedModel) + "\",");
+            json.AppendLine("  \"exportedAt\": \"" + DateTime.UtcNow.ToString("O") + "\",");
+            json.AppendLine("  \"files\": [");
+
+            for (var i = 0; i < records.Count; i++)
+            {
+                var record = records[i];
+                json.AppendLine("    {");
+                json.AppendLine("      \"component\": \"" + EscapeJson(record.Component) + "\",");
+                json.AppendLine("      \"drawableId\": \"" + EscapeJson(record.DrawableId) + "\",");
+                json.AppendLine("      \"textureId\": \"" + EscapeJson(record.TextureId) + "\",");
+                json.AppendLine("      \"drawableName\": \"" + EscapeJson(record.DrawableName) + "\",");
+                json.AppendLine("      \"textureName\": \"" + EscapeJson(record.TextureName) + "\",");
+                json.AppendLine("      \"path\": \"" + EscapeJson(record.RelativePath) + "\"");
+                json.Append("    }");
+                if (i < records.Count - 1)
+                {
+                    json.Append(",");
+                }
+                json.AppendLine();
+            }
+
+            json.AppendLine("  ]");
+            json.AppendLine("}");
+            File.WriteAllText(manifestPath, json.ToString(), Encoding.UTF8);
+        }
+
+        private static string EscapeJson(string value)
+        {
+            return (value ?? string.Empty)
+                .Replace("\\", "\\\\")
+                .Replace("\"", "\\\"")
+                .Replace("\r", "\\r")
+                .Replace("\n", "\\n")
+                .Replace("\t", "\\t");
+        }
+
         private void ExportCurrentPreviewPngStable(string filePath)
+        {
+            var selectedDrawable = GetSelectedExportDrawable();
+            ExportDrawablePreviewPngStable(filePath, selectedDrawable, GetSelectedExportTexture(selectedDrawable), null);
+        }
+
+        private void ExportDrawablePreviewPngStable(string filePath, Drawable selectedDrawable, TextureDictionary selectedTexture, Texture textureOverride)
         {
             if (Renderer == null || Renderer.DXMan == null || Renderer.DXMan.device == null || Renderer.DXMan.context == null || Renderer.DXMan.backbuffer == null)
             {
                 throw new InvalidOperationException("The 3D preview is not ready yet.");
             }
 
-            var selectedDrawable = GetSelectedExportDrawable();
-            var selectedTexture = GetSelectedExportTexture(selectedDrawable);
             if (selectedDrawable == null)
             {
                 throw new InvalidOperationException("No selected drawable is available for export.");
@@ -115,7 +401,7 @@ namespace CodeWalker
             {
                 selectedPedComponentIndex = GetSelectedPedComponentIndex(selectedDrawable);
             }
-            if (selectedPedComponentIndex < 0 && selectedTexture == null && liveTexturePath == null)
+            if (selectedPedComponentIndex < 0 && selectedTexture == null && liveTexturePath == null && textureOverride == null)
             {
                 throw new InvalidOperationException("No texture is available for the selected drawable.");
             }
@@ -145,6 +431,10 @@ namespace CodeWalker
                     if (forceSelectedDrawableIntoComponent)
                     {
                         componentExportState = ApplyTemporaryExportPedComponent(selectedPedComponentIndex, selectedDrawable, selectedTexture);
+                    }
+                    if (textureOverride != null && selectedPedComponentIndex >= 0)
+                    {
+                        SelectedPed.Textures[selectedPedComponentIndex] = textureOverride;
                     }
 
                     var exportDesc = new Texture2DDescription
@@ -291,6 +581,22 @@ namespace CodeWalker
             }
 
             return StableDefaultExportCameraPadding;
+        }
+
+        private class BatchExportItem
+        {
+            public Drawable Drawable;
+            public TextureDictionary TextureDictionary;
+        }
+
+        private class BatchExportRecord
+        {
+            public string Component;
+            public string DrawableId;
+            public string TextureId;
+            public string DrawableName;
+            public string TextureName;
+            public string RelativePath;
         }
     }
 }
