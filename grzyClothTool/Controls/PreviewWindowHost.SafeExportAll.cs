@@ -78,7 +78,7 @@ namespace grzyClothTool.Controls
                 if (settings.PauseRenderLoop && _customPedsForm.Renderer?.DXMan != null)
                 {
                     _customPedsForm.Renderer.DXMan.RenderLoopPaused = true;
-                    Thread.Sleep(150);
+                    Thread.Sleep(250);
                     Application.DoEvents();
                 }
 
@@ -112,7 +112,11 @@ namespace grzyClothTool.Controls
 
                     try
                     {
-                        Directory.CreateDirectory(Path.GetDirectoryName(outputPath));
+                        var outputDirectory = Path.GetDirectoryName(outputPath);
+                        if (!string.IsNullOrWhiteSpace(outputDirectory))
+                        {
+                            Directory.CreateDirectory(outputDirectory);
+                        }
 
                         var updates = new Dictionary<string, string>();
                         if (currentSex == null || !currentSex.Equals(item.Drawable.Sex))
@@ -121,6 +125,7 @@ namespace grzyClothTool.Controls
                             SetPedModel(sexName == "male" ? "mp_m_freemode_01" : "mp_f_freemode_01");
                             updates["GenderChanged"] = string.Empty;
                             currentSex = item.Drawable.Sex;
+                            WaitWithEvents(settings.PreviewSettleMs);
                         }
 
                         addon.SelectedDrawables.Clear();
@@ -132,7 +137,7 @@ namespace grzyClothTool.Controls
 
                         WaitWithEvents(settings.PreviewSettleMs);
 
-                        _customPedsForm.ExportCurrentPreviewPngStable(outputPath);
+                        ExportItemPngWithRetries(outputPath, relativePath, settings);
                         exported++;
 
                         records.Add(new ExportRecord
@@ -149,7 +154,7 @@ namespace grzyClothTool.Controls
                     {
                         failed++;
                         LogHelper.Log("Export All PNG DirectX failure at " + relativePath + ": " + ex.Message, Views.LogType.Error);
-                        MessageBox.Show("DirectX/GPU driver error during export. Export stopped to protect the app.\n\nLast item: " + relativePath + "\n\nTry Low or Stable mode with bigger delays.", "Export All PNG", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        MessageBox.Show("DirectX/GPU driver error during export. Export stopped to protect the app.\n\nLast item: " + relativePath + "\n\nUse Low mode. If it still happens, restart the app before exporting again because the GPU device may already be unstable.", "Export All PNG", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                         break;
                     }
                     catch (Exception ex)
@@ -172,14 +177,14 @@ namespace grzyClothTool.Controls
             }
             finally
             {
-                WriteExportManifest(outputRoot, records);
-                RestoreExportSelection(addon, previousDrawables, previousDrawable, previousTexture);
-                ForceMemoryCleanup();
-
                 if (_customPedsForm.Renderer?.DXMan != null)
                 {
                     _customPedsForm.Renderer.DXMan.RenderLoopPaused = oldRenderLoopPaused;
                 }
+
+                WriteExportManifest(outputRoot, records);
+                RestoreExportSelection(addon, previousDrawables, previousDrawable, previousTexture);
+                ForceMemoryCleanup();
 
                 if (!progress.IsDisposed)
                 {
@@ -188,6 +193,59 @@ namespace grzyClothTool.Controls
             }
 
             MessageBox.Show("Exported: " + exported + "\nFailed/skipped: " + failed, "Export All PNG", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private void ExportItemPngWithRetries(string outputPath, string relativePath, ExportSettings settings)
+        {
+            Exception lastError = null;
+            var tempPath = outputPath + ".tmp";
+
+            for (var attempt = 1; attempt <= Math.Max(1, settings.RetryCount); attempt++)
+            {
+                try
+                {
+                    DeleteFileIfExists(tempPath);
+                    _customPedsForm.ExportCurrentPreviewPngStable(tempPath);
+
+                    if (!File.Exists(tempPath))
+                    {
+                        throw new IOException("Exporter completed but the PNG file was not created.");
+                    }
+
+                    DeleteFileIfExists(outputPath);
+                    File.Move(tempPath, outputPath);
+                    return;
+                }
+                catch (SharpDX.SharpDXException)
+                {
+                    DeleteFileIfExists(tempPath);
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    lastError = ex;
+                    DeleteFileIfExists(tempPath);
+                    LogHelper.Log("Export All PNG retry " + attempt + "/" + settings.RetryCount + " failed at " + relativePath + ": " + ex.Message, Views.LogType.Warning);
+                    ForceMemoryCleanup();
+                    WaitWithEvents(settings.RetryDelayMs);
+                }
+            }
+
+            throw new InvalidOperationException("Failed after " + settings.RetryCount + " attempt(s): " + (lastError?.Message ?? "unknown error"), lastError);
+        }
+
+        private static void DeleteFileIfExists(string path)
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch
+            {
+            }
         }
 
         private static bool StayUnderRamLimit(ExportProgressForm progress, ExportSettings settings)
@@ -205,7 +263,7 @@ namespace grzyClothTool.Controls
             for (var i = 0; i < 3; i++)
             {
                 ForceMemoryCleanup();
-                WaitWithEvents(500);
+                WaitWithEvents(750);
 
                 if (Process.GetCurrentProcess().PrivateMemorySize64 < limitBytes)
                 {
@@ -347,23 +405,25 @@ namespace grzyClothTool.Controls
             public int BatchPauseMs;
             public int RamLimitMb;
             public bool PauseRenderLoop;
+            public int RetryCount;
+            public int RetryDelayMs;
 
             public static ExportSettings FromMode(ExportMode mode)
             {
                 switch (mode)
                 {
                     case ExportMode.Low:
-                        return new ExportSettings { Mode = mode, PreviewSettleMs = 900, ItemDelayMs = 1200, PauseEveryItems = 2, BatchPauseMs = 3000, RamLimitMb = 1500, PauseRenderLoop = true };
+                        return new ExportSettings { Mode = mode, PreviewSettleMs = 1500, ItemDelayMs = 1500, PauseEveryItems = 1, BatchPauseMs = 3500, RamLimitMb = 1200, PauseRenderLoop = true, RetryCount = 3, RetryDelayMs = 1500 };
                     case ExportMode.Stable:
-                        return new ExportSettings { Mode = mode, PreviewSettleMs = 600, ItemDelayMs = 800, PauseEveryItems = 5, BatchPauseMs = 2000, RamLimitMb = 2500, PauseRenderLoop = true };
+                        return new ExportSettings { Mode = mode, PreviewSettleMs = 900, ItemDelayMs = 1000, PauseEveryItems = 3, BatchPauseMs = 2500, RamLimitMb = 2000, PauseRenderLoop = true, RetryCount = 2, RetryDelayMs = 1000 };
                     case ExportMode.Medium:
-                        return new ExportSettings { Mode = mode, PreviewSettleMs = 350, ItemDelayMs = 400, PauseEveryItems = 10, BatchPauseMs = 1000, RamLimitMb = 3500, PauseRenderLoop = true };
+                        return new ExportSettings { Mode = mode, PreviewSettleMs = 500, ItemDelayMs = 600, PauseEveryItems = 6, BatchPauseMs = 1500, RamLimitMb = 3000, PauseRenderLoop = true, RetryCount = 2, RetryDelayMs = 800 };
                     case ExportMode.Hard:
-                        return new ExportSettings { Mode = mode, PreviewSettleMs = 200, ItemDelayMs = 150, PauseEveryItems = 20, BatchPauseMs = 500, RamLimitMb = 5000, PauseRenderLoop = true };
+                        return new ExportSettings { Mode = mode, PreviewSettleMs = 300, ItemDelayMs = 250, PauseEveryItems = 12, BatchPauseMs = 800, RamLimitMb = 4500, PauseRenderLoop = true, RetryCount = 1, RetryDelayMs = 500 };
                     case ExportMode.Extreme:
-                        return new ExportSettings { Mode = mode, PreviewSettleMs = 75, ItemDelayMs = 25, PauseEveryItems = 50, BatchPauseMs = 100, RamLimitMb = 8000, PauseRenderLoop = false };
+                        return new ExportSettings { Mode = mode, PreviewSettleMs = 125, ItemDelayMs = 75, PauseEveryItems = 25, BatchPauseMs = 250, RamLimitMb = 7000, PauseRenderLoop = false, RetryCount = 1, RetryDelayMs = 300 };
                     default:
-                        return FromMode(ExportMode.Stable);
+                        return FromMode(ExportMode.Low);
                 }
             }
         }
@@ -376,6 +436,8 @@ namespace grzyClothTool.Controls
             private readonly NumericUpDown pauseEveryBox;
             private readonly NumericUpDown pauseMsBox;
             private readonly NumericUpDown ramBox;
+            private readonly NumericUpDown retryBox;
+            private readonly NumericUpDown retryDelayBox;
             private readonly CheckBox pauseRenderLoopBox;
             private readonly Label warningLabel;
             private readonly int totalItems;
@@ -387,8 +449,8 @@ namespace grzyClothTool.Controls
             {
                 this.totalItems = totalItems;
                 Text = "Export All PNG - Configuration";
-                Width = 520;
-                Height = 355;
+                Width = 540;
+                Height = 425;
                 FormBorderStyle = FormBorderStyle.FixedDialog;
                 MaximizeBox = false;
                 MinimizeBox = false;
@@ -398,28 +460,30 @@ namespace grzyClothTool.Controls
                 {
                     Left = 12,
                     Top = 12,
-                    Width = 480,
+                    Width = 500,
                     Height = 42,
-                    Text = "Choose export speed. Faster modes stress GPU harder and may crash the app or trigger driver timeout on weaker systems."
+                    Text = "Low mode is now the default safest export. Faster modes can still stress GPU/driver and are not recommended for big batches."
                 };
 
                 var modeLabel = new Label { Left = 12, Top = 62, Width = 130, Height = 22, Text = "Mode" };
-                modeBox = new ComboBox { Left = 160, Top = 60, Width = 160, DropDownStyle = ComboBoxStyle.DropDownList };
+                modeBox = new ComboBox { Left = 170, Top = 60, Width = 160, DropDownStyle = ComboBoxStyle.DropDownList };
                 modeBox.Items.AddRange(Enum.GetNames(typeof(ExportMode)));
-                modeBox.SelectedItem = ExportMode.Stable.ToString();
+                modeBox.SelectedItem = ExportMode.Low.ToString();
                 modeBox.SelectedIndexChanged += (s, e) => ApplyMode((ExportMode)Enum.Parse(typeof(ExportMode), modeBox.SelectedItem.ToString()));
 
-                settleBox = AddNumber("Preview settle ms", 92, 0, 5000);
-                delayBox = AddNumber("Delay per PNG ms", 122, 0, 10000);
+                settleBox = AddNumber("Preview settle ms", 92, 0, 10000);
+                delayBox = AddNumber("Delay per PNG ms", 122, 0, 15000);
                 pauseEveryBox = AddNumber("Pause every N PNGs", 152, 1, 1000);
                 pauseMsBox = AddNumber("Batch pause ms", 182, 0, 30000);
                 ramBox = AddNumber("RAM limit MB", 212, 512, 64000);
+                retryBox = AddNumber("Retries per PNG", 242, 1, 10);
+                retryDelayBox = AddNumber("Retry delay ms", 272, 0, 10000);
 
                 pauseRenderLoopBox = new CheckBox
                 {
-                    Left = 160,
-                    Top = 242,
-                    Width = 320,
+                    Left = 170,
+                    Top = 302,
+                    Width = 330,
                     Height = 24,
                     Text = "Pause live 3D render loop during export (recommended)"
                 };
@@ -427,14 +491,14 @@ namespace grzyClothTool.Controls
                 warningLabel = new Label
                 {
                     Left = 12,
-                    Top = 270,
-                    Width = 480,
-                    Height = 36,
-                    Text = "Stable mode is recommended. Total PNGs: " + totalItems
+                    Top = 330,
+                    Width = 500,
+                    Height = 42,
+                    Text = "Low mode is recommended. Total PNGs: " + totalItems
                 };
 
-                var okButton = new Button { Left = 312, Top = 308, Width = 85, Height = 26, Text = "Start" };
-                var cancelButton = new Button { Left = 407, Top = 308, Width = 85, Height = 26, Text = "Cancel" };
+                var okButton = new Button { Left = 332, Top = 377, Width = 85, Height = 26, Text = "Start" };
+                var cancelButton = new Button { Left = 427, Top = 377, Width = 85, Height = 26, Text = "Cancel" };
                 okButton.Click += (s, e) => { SaveSettings(); DialogResult = DialogResult.OK; Close(); };
                 cancelButton.Click += (s, e) => { DialogResult = DialogResult.Cancel; Close(); };
 
@@ -446,13 +510,13 @@ namespace grzyClothTool.Controls
                 Controls.Add(okButton);
                 Controls.Add(cancelButton);
 
-                ApplyMode(ExportMode.Stable);
+                ApplyMode(ExportMode.Low);
             }
 
             private NumericUpDown AddNumber(string label, int top, int minimum, int maximum)
             {
-                Controls.Add(new Label { Left = 12, Top = top + 2, Width = 140, Height = 22, Text = label });
-                var box = new NumericUpDown { Left = 160, Top = top, Width = 120, Minimum = minimum, Maximum = maximum, Increment = 50 };
+                Controls.Add(new Label { Left = 12, Top = top + 2, Width = 150, Height = 22, Text = label });
+                var box = new NumericUpDown { Left = 170, Top = top, Width = 120, Minimum = minimum, Maximum = maximum, Increment = 50 };
                 Controls.Add(box);
                 return box;
             }
@@ -467,6 +531,8 @@ namespace grzyClothTool.Controls
                 pauseEveryBox.Value = s.PauseEveryItems;
                 pauseMsBox.Value = s.BatchPauseMs;
                 ramBox.Value = s.RamLimitMb;
+                retryBox.Value = s.RetryCount;
+                retryDelayBox.Value = s.RetryDelayMs;
                 pauseRenderLoopBox.Checked = s.PauseRenderLoop;
 
                 var approxSeconds = totalItems * (s.PreviewSettleMs + s.ItemDelayMs) / 1000.0;
@@ -486,7 +552,9 @@ namespace grzyClothTool.Controls
                     PauseEveryItems = (int)pauseEveryBox.Value,
                     BatchPauseMs = (int)pauseMsBox.Value,
                     RamLimitMb = (int)ramBox.Value,
-                    PauseRenderLoop = pauseRenderLoopBox.Checked
+                    PauseRenderLoop = pauseRenderLoopBox.Checked,
+                    RetryCount = (int)retryBox.Value,
+                    RetryDelayMs = (int)retryDelayBox.Value
                 };
             }
         }
@@ -505,18 +573,18 @@ namespace grzyClothTool.Controls
             {
                 this.settings = settings;
                 Text = "Export All PNG - " + settings.Mode;
-                Width = 640;
-                Height = 170;
+                Width = 660;
+                Height = 180;
                 FormBorderStyle = FormBorderStyle.FixedDialog;
                 MaximizeBox = false;
                 MinimizeBox = false;
                 StartPosition = FormStartPosition.CenterScreen;
                 TopMost = true;
 
-                statusLabel = new Label { Left = 12, Top = 12, Width = 600, Height = 24, Text = "Preparing..." };
-                countLabel = new Label { Left = 12, Top = 40, Width = 600, Height = 38, Text = "0%" };
-                progressBar = new ProgressBar { Left = 12, Top = 82, Width = 600, Height = 20, Minimum = 0, Maximum = 100 };
-                cancelButton = new Button { Left = 512, Top = 110, Width = 100, Height = 26, Text = "Cancel" };
+                statusLabel = new Label { Left = 12, Top = 12, Width = 620, Height = 24, Text = "Preparing..." };
+                countLabel = new Label { Left = 12, Top = 40, Width = 620, Height = 48, Text = "0%" };
+                progressBar = new ProgressBar { Left = 12, Top = 92, Width = 620, Height = 20, Minimum = 0, Maximum = 100 };
+                cancelButton = new Button { Left = 532, Top = 120, Width = 100, Height = 26, Text = "Cancel" };
                 cancelButton.Click += (s, e) => { CancelRequested = true; cancelButton.Enabled = false; cancelButton.Text = "Cancelling..."; };
 
                 Controls.Add(statusLabel);
@@ -531,7 +599,7 @@ namespace grzyClothTool.Controls
                 total = Math.Max(1, total);
                 var percent = Math.Max(0, Math.Min(100, (int)Math.Round(processed * 100.0 / total)));
                 statusLabel.Text = status;
-                countLabel.Text = percent + "% | " + processed + "/" + total + " processed | " + exported + " exported | " + failed + " failed | RAM " + ramMb + " MB\nMode: " + settings.Mode + " | Delay: " + settings.ItemDelayMs + "ms | Pause every " + settings.PauseEveryItems + " | Render loop paused: " + settings.PauseRenderLoop;
+                countLabel.Text = percent + "% | " + processed + "/" + total + " processed | " + exported + " exported | " + failed + " failed | RAM " + ramMb + " MB\nMode: " + settings.Mode + " | Delay: " + settings.ItemDelayMs + "ms | Retries: " + settings.RetryCount + " | Pause every " + settings.PauseEveryItems + " | Render loop paused: " + settings.PauseRenderLoop;
                 progressBar.Value = percent;
                 Refresh();
             }
