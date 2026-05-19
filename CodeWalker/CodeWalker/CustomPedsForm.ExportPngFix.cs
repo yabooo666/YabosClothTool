@@ -136,6 +136,13 @@ namespace CodeWalker
                     LogError("Batch preview PNG export failed: " + ex);
                     MessageBox.Show(this, "Unable to batch export preview PNGs:\n" + ex.Message, "Export All PNG", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
+                finally
+                {
+                    BatchLoadedDrawables.Clear();
+                    BatchLoadedTextureVariants.Clear();
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
+                }
             }
         }
 
@@ -158,7 +165,7 @@ namespace CodeWalker
                 var componentName = GetComponentDirectoryName(item.Drawable?.Name);
                 if (componentName == null) continue;
 
-                var textureDictionaries = item.TextureDictionaries.Where(t => t?.Textures?.data_items != null && t.Textures.data_items.Length > 0).ToList();
+                var textureDictionaries = item.TextureDictionaries.Where(t => SelectPreviewTexture(t) != null).ToList();
                 if (textureDictionaries.Count == 0) continue;
 
                 var drawableId = GetDrawableExportId(item.Drawable?.Name, drawableOrder);
@@ -170,7 +177,7 @@ namespace CodeWalker
                 for (var textureIndex = 0; textureIndex < textureDictionaries.Count; textureIndex++)
                 {
                     var textureDictionary = textureDictionaries[textureIndex];
-                    var texture = textureDictionary.Textures.data_items.FirstOrDefault(t => t != null);
+                    var texture = SelectPreviewTexture(textureDictionary);
                     if (texture == null) continue;
 
                     var textureId = textureIndex.ToString("000");
@@ -230,6 +237,29 @@ namespace CodeWalker
                     TextureDictionaries = textureDictionary != null ? new List<TextureDictionary> { textureDictionary } : new List<TextureDictionary>()
                 };
             }
+        }
+
+        private static Texture SelectPreviewTexture(TextureDictionary textureDictionary)
+        {
+            var textures = textureDictionary?.Textures?.data_items?.Where(t => t != null).ToList();
+            if (textures == null || textures.Count == 0) return null;
+
+            var diffuse = textures.FirstOrDefault(t => IsLikelyDiffuseTexture(t.Name));
+            if (diffuse != null) return diffuse;
+
+            return textures.FirstOrDefault(t => !IsLikelyUtilityTexture(t.Name)) ?? textures.FirstOrDefault();
+        }
+
+        private static bool IsLikelyDiffuseTexture(string textureName)
+        {
+            var name = (textureName ?? string.Empty).ToLowerInvariant();
+            return name.EndsWith("_uni") || name.Contains("_diff") || name.Contains("diffuse") || name.EndsWith("_a") || name.EndsWith("_b") || name.EndsWith("_c") || name.EndsWith("_d");
+        }
+
+        private static bool IsLikelyUtilityTexture(string textureName)
+        {
+            var name = (textureName ?? string.Empty).ToLowerInvariant();
+            return name.Contains("normal") || name.Contains("bump") || name.Contains("spec") || name.Contains("detail") || name.Contains("mask");
         }
 
         private static string GetComponentDirectoryName(string drawableName)
@@ -385,10 +415,15 @@ namespace CodeWalker
                     {
                         componentExportState = ApplyTemporaryExportPedComponent(selectedPedComponentIndex, selectedDrawable, selectedTexture);
                     }
-                    if (textureOverride != null && selectedPedComponentIndex >= 0)
+
+                    var previewTexture = textureOverride ?? SelectPreviewTexture(selectedTexture);
+                    if (previewTexture != null && selectedPedComponentIndex >= 0)
                     {
-                        SelectedPed.Textures[selectedPedComponentIndex] = textureOverride;
+                        SelectedPed.Textures[selectedPedComponentIndex] = previewTexture;
                     }
+
+                    Renderer.RenderableCache.ContentThreadProc();
+                    Renderer.RenderableCache.RenderThreadSync();
 
                     var exportDesc = new Texture2DDescription
                     {
