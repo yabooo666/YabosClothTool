@@ -192,7 +192,7 @@
                                                                                 </Border>
                                                                                 <ControlTemplate.Triggers>
                                                                                     <Trigger Property="IsMouseOver" Value="True">
-                                                                                        <Setter TargetName="CloseIcon" Property="Foreground" Value="#D32F2F"/>
+                                                                                        <Setter TargetName="CloseIcon" Property="Foreground" Value="{DynamicResource AccentBrush}"/>
                                                                                     </Trigger>
                                                                                 </ControlTemplate.Triggers>
                                                                             </ControlTemplate>
@@ -252,7 +252,7 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <GroupBox Style="{StaticResource FixedGroupBox}" Header="Explore my other tools" Grid.Column="0" Grid.Row="1" Margin="2">
+            <GroupBox Style="{StaticResource FixedGroupBox}" Header="Project links" Grid.Column="0" Grid.Row="1" Margin="2">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <ItemsControl ItemsSource="{Binding OtherTools}" Padding="4">
                         <ItemsControl.ItemTemplate>
@@ -362,7 +362,7 @@
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <GroupBox Style="{StaticResource FixedGroupBox}" Header="Supporters" Margin="2" Padding="5" Grid.Row="0">
+                <GroupBox Style="{StaticResource FixedGroupBox}" Header="Community" Margin="2" Padding="5" Grid.Row="0">
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <ItemsControl ItemsSource="{Binding PatreonList}">
                             <ItemsControl.ItemTemplate>

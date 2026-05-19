@@ -363,7 +363,7 @@ public static class UpdateHelper
             
             SafeDeleteFile(downloadZip);
 
-            var newExeLocation = Path.Combine(extractFolder, "grzyClothTool.exe");
+            var newExeLocation = Path.Combine(extractFolder, "YabosClothTool.exe");
             
             if (!File.Exists(newExeLocation))
             {
@@ -468,7 +468,7 @@ public static class UpdateHelper
 
             if (filesMoved > 0)
             {
-                var finalExePath = Path.Combine(oldDir, "grzyClothTool.exe");
+                var finalExePath = Path.Combine(oldDir, "YabosClothTool.exe");
                 if (File.Exists(finalExePath))
                 {
                     ProcessStartInfo startInfo = new()

@@ -150,7 +150,7 @@
                                     <Rectangle Grid.Column="0" 
                                               Grid.RowSpan="2"
                                               x:Name="GenderBar" 
-                                              Fill="#64b5f6"
+                                              Fill="{DynamicResource AccentBrush}"
                                               Width="3.5"
                                               RadiusX="2"
                                               RadiusY="2"
@@ -184,7 +184,7 @@
                                                            Kind="AlertCircle" 
                                                            Width="13" 
                                                            Height="13"
-                                                           Foreground="#f59e0b"
+                                                           Foreground="{DynamicResource AccentBrush}"
                                                            Margin="0,0,3,0"
                                                            Visibility="Collapsed"
                                                            ToolTipService.InitialShowDelay="0" />
@@ -227,7 +227,7 @@
                                                Margin="4,0,0,0">
                                         
                                         <Border x:Name="ReservedBadge"
-                                               Background="#fef3c7"
+                                               Background="{DynamicResource AccentDimBrush}"
                                                CornerRadius="2"
                                                Padding="4,1"
                                                Margin="0,0,2,0"
@@ -237,12 +237,12 @@
                                             <TextBlock Text="RSV" 
                                                       FontSize="8" 
                                                       FontWeight="Bold"
-                                                      Foreground="#f59e0b"
+                                                      Foreground="{DynamicResource AccentBrush}"
                                                       VerticalAlignment="Center" />
                                         </Border>
                                         
                                         <Border x:Name="NewBadge"
-                                               Background="#dbeafe"
+                                               Background="{DynamicResource Brush200}"
                                                CornerRadius="2"
                                                Padding="4,1"
                                                Margin="0,0,2,0"
@@ -252,7 +252,7 @@
                                             <TextBlock Text="NEW" 
                                                       FontSize="8" 
                                                       FontWeight="Bold"
-                                                      Foreground="#2563eb"
+                                                      Foreground="{DynamicResource AccentBrush}"
                                                       VerticalAlignment="Center" />
                                         </Border>
                                         
@@ -280,7 +280,7 @@
                                         <Ellipse x:Name="SelectionDot"
                                             Width="6"
                                             Height="6"
-                                            Fill="#10b981"
+                                            Fill="{DynamicResource AccentBrush}"
                                             Margin="2,0,0,0"
                                             Visibility="Collapsed"
                                             ToolTip="Selected"
@@ -364,7 +364,7 @@
                             </DataTrigger>
                             
                             <DataTrigger Binding="{Binding SexName}" Value="female">
-                                <Setter Property="Fill" Value="#f472b6" TargetName="GenderBar"/>
+                                <Setter Property="Fill" Value="{DynamicResource AccentHoverBrush}" TargetName="GenderBar"/>
                             </DataTrigger>
                             
                             <DataTrigger Binding="{Binding IsEncrypted}" Value="True">
@@ -396,7 +396,7 @@
                             <!-- Selected -->
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter Property="Background" Value="{DynamicResource Brush150}" TargetName="Border"/>
-                                <Setter Property="BorderBrush" Value="#3b82f6" TargetName="Border"/>
+                                <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" TargetName="Border"/>
                                 <Setter Property="BorderThickness" Value="1" TargetName="Border"/>
                                 <Setter Property="FontWeight" Value="SemiBold" TargetName="NameText"/>
                                 <Setter Property="Visibility" Value="Visible" TargetName="SelectionDot" />
@@ -417,7 +417,7 @@
                                     <Condition Property="IsMouseOver" Value="True"/>
                                 </MultiTrigger.Conditions>
                                 <Setter Property="Background" Value="{DynamicResource Brush150}" TargetName="Border"/>
-                                <Setter Property="BorderBrush" Value="#60a5fa" TargetName="Border"/>
+                                <Setter Property="BorderBrush" Value="{DynamicResource AccentHoverBrush}" TargetName="Border"/>
                                 <Setter Property="Opacity" Value="0.35" TargetName="ShadowBorder"/>
                             </MultiTrigger>
                             
@@ -602,7 +602,7 @@
                                                                 
                                                                 <Border Grid.Column="3"
                                                                        x:Name="CountPill"
-                                                                       Background="#dbeafe"
+                                                                       Background="{DynamicResource Brush200}"
                                                                        BorderBrush="{DynamicResource Brush300}"
                                                                        BorderThickness="1"
                                                                        CornerRadius="10"
@@ -613,7 +613,7 @@
                                                                              Text="{Binding ItemCount}" 
                                                                              FontSize="9.5"
                                                                              FontWeight="SemiBold"
-                                                                             Foreground="#1e40af" />
+                                                                             Foreground="{DynamicResource AccentBrush}" />
                                                                 </Border>
                                                             </Grid>
                                                         </Border>
@@ -641,14 +641,14 @@
                                             <!-- Hover -->
                                             <Trigger SourceName="HeaderWrapper" Property="IsMouseOver" Value="True">
                                                 <Setter TargetName="GroupHeaderBorder" Property="Background" Value="{DynamicResource Brush100}" />
-                                                <Setter TargetName="GroupHeaderBorder" Property="BorderBrush" Value="#60a5fa" />
+                                                <Setter TargetName="GroupHeaderBorder" Property="BorderBrush" Value="{DynamicResource AccentHoverBrush}" />
                                                 <Setter TargetName="GroupHeaderBorder" Property="BorderThickness" Value="1" />
-                                                <Setter TargetName="GroupIcon" Property="Foreground" Value="#3b82f6" />
-                                                <Setter TargetName="GroupNameText" Property="Foreground" Value="#3b82f6" />
-                                                <Setter TargetName="ExpandArrow" Property="Fill" Value="#3b82f6" />
-                                                <Setter TargetName="CountPill" Property="Background" Value="#bfdbfe" />
-                                                <Setter TargetName="CountPill" Property="BorderBrush" Value="#60a5fa" />
-                                                <Setter TargetName="GroupCountText" Property="Foreground" Value="#1e40af" />
+                                                <Setter TargetName="GroupIcon" Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                                <Setter TargetName="GroupNameText" Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                                <Setter TargetName="ExpandArrow" Property="Fill" Value="{DynamicResource AccentBrush}" />
+                                                <Setter TargetName="CountPill" Property="Background" Value="{DynamicResource AccentDimBrush}" />
+                                                <Setter TargetName="CountPill" Property="BorderBrush" Value="{DynamicResource AccentHoverBrush}" />
+                                                <Setter TargetName="GroupCountText" Property="Foreground" Value="{DynamicResource AccentBrush}" />
                                                 <Setter TargetName="GroupShadow" Property="Opacity" Value="0.18" />
                                             </Trigger>
                                             
@@ -687,14 +687,14 @@
                                             <!-- Drag Over -->
                                             <Trigger SourceName="GroupHeaderBorder" Property="local:DrawableList.IsDragOver" Value="True">
                                                 <Setter TargetName="GroupHeaderBorder" Property="Background" Value="{DynamicResource Brush100}" />
-                                                <Setter TargetName="GroupHeaderBorder" Property="BorderBrush" Value="#60a5fa" />
+                                                <Setter TargetName="GroupHeaderBorder" Property="BorderBrush" Value="{DynamicResource AccentHoverBrush}" />
                                                 <Setter TargetName="GroupHeaderBorder" Property="BorderThickness" Value="1" />
-                                                <Setter TargetName="GroupIcon" Property="Foreground" Value="#3b82f6" />
-                                                <Setter TargetName="GroupNameText" Property="Foreground" Value="#3b82f6" />
-                                                <Setter TargetName="ExpandArrow" Property="Fill" Value="#3b82f6" />
-                                                <Setter TargetName="CountPill" Property="Background" Value="#bfdbfe" />
-                                                <Setter TargetName="CountPill" Property="BorderBrush" Value="#60a5fa" />
-                                                <Setter TargetName="GroupCountText" Property="Foreground" Value="#1e40af" />
+                                                <Setter TargetName="GroupIcon" Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                                <Setter TargetName="GroupNameText" Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                                <Setter TargetName="ExpandArrow" Property="Fill" Value="{DynamicResource AccentBrush}" />
+                                                <Setter TargetName="CountPill" Property="Background" Value="{DynamicResource AccentDimBrush}" />
+                                                <Setter TargetName="CountPill" Property="BorderBrush" Value="{DynamicResource AccentHoverBrush}" />
+                                                <Setter TargetName="GroupCountText" Property="Foreground" Value="{DynamicResource AccentBrush}" />
                                                 <Setter TargetName="GroupShadow" Property="Opacity" Value="0.22" />
                                             </Trigger>
                                             

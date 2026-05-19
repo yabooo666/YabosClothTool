@@ -165,10 +165,10 @@
 
                                         <c:SettingsLabelTextBox
                                             Margin="5"
-                                            Label="Current GTAV Path"
+                                            Label="Current Game Path"
                                             Text="{Binding GTAVPath, Mode=OneWay}"
-                                            Description="GTAV path is required for 3D preview to work"
-                                            Title="Select your GTA V Path"
+                                            Description="Game path is required for 3D preview to work"
+                                            Title="Select your game path"
                                             ButtonClick="GTAVPath_Click" />
 
                                         <c:SettingsLabelCheckBox

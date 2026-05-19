@@ -28,7 +28,7 @@
         <!-- Border for our custom message box -->
         <Border Grid.ColumnSpan="3" 
                 Grid.RowSpan="3" 
-                BorderBrush="{DynamicResource Brush100}" 
+                BorderBrush="{DynamicResource AccentDimBrush}" 
                 BorderThickness="1" 
                 HorizontalAlignment="Stretch" 
                 VerticalAlignment="Stretch">
@@ -46,8 +46,8 @@
                    Grid.Row="0" 
                    Text="Custom Message Box Caption"
                    Grid.ColumnSpan="2" 
-                   Background="Gainsboro"
-                   Foreground="Black"
+                   Background="{DynamicResource Brush100}"
+                   Foreground="{DynamicResource Brush950}"
                    FontWeight="SemiBold"
                    Margin="1,1,1,0"
                    Padding="5,4,0,0" 

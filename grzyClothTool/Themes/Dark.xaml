@@ -5,24 +5,28 @@
         <ResourceDictionary Source="Shared.xaml" />
     </ResourceDictionary.MergedDictionaries>
 
-    <Color x:Key="Color950">#f6f6f6</Color>
-    <Color x:Key="Color900">#e7e7e7</Color>
-    <Color x:Key="Color800">#d1d1d1</Color>
-    <Color x:Key="Color700">#b0b0b0</Color>
-    <Color x:Key="Color600">#888888</Color>
-    <Color x:Key="Color500">#787878</Color>
-    <Color x:Key="Color450">#6a6a6a</Color>
-    <Color x:Key="Color400">#5d5d5d</Color>
-    <Color x:Key="Color350">#565656</Color>
-    <Color x:Key="Color300">#4f4f4f</Color>
-    <Color x:Key="Color250">#4a4a4a</Color>
-    <Color x:Key="Color200">#454545</Color>
-    <Color x:Key="Color175">#434343</Color>
-    <Color x:Key="Color150">#414141</Color>
-    <Color x:Key="Color125">#3f3f3f</Color>
-    <Color x:Key="Color100">#3d3d3d</Color>
-    <Color x:Key="Color75">#323232</Color>
-    <Color x:Key="Color50">#262626</Color>
+    <Color x:Key="Color950">#f5f7fa</Color>
+    <Color x:Key="Color900">#e7ebf0</Color>
+    <Color x:Key="Color800">#c8ced8</Color>
+    <Color x:Key="Color700">#a4adba</Color>
+    <Color x:Key="Color600">#7e8794</Color>
+    <Color x:Key="Color500">#626b78</Color>
+    <Color x:Key="Color450">#535b66</Color>
+    <Color x:Key="Color400">#454d57</Color>
+    <Color x:Key="Color350">#383f48</Color>
+    <Color x:Key="Color300">#303741</Color>
+    <Color x:Key="Color250">#252b34</Color>
+    <Color x:Key="Color200">#1e242c</Color>
+    <Color x:Key="Color175">#1a1f26</Color>
+    <Color x:Key="Color150">#171b21</Color>
+    <Color x:Key="Color125">#14181d</Color>
+    <Color x:Key="Color100">#101318</Color>
+    <Color x:Key="Color75">#0b0d11</Color>
+    <Color x:Key="Color50">#07080b</Color>
+    <Color x:Key="ColorAccent">#ff1744</Color>
+    <Color x:Key="ColorAccentHover">#ff335d</Color>
+    <Color x:Key="ColorAccentPressed">#bf0f2f</Color>
+    <Color x:Key="ColorAccentDim">#4d101d</Color>
 
     <SolidColorBrush x:Key="Brush50" Color="{StaticResource Color50}" />
     <SolidColorBrush x:Key="Brush75" Color="{StaticResource Color75}" />
@@ -42,9 +46,13 @@
     <SolidColorBrush x:Key="Brush800" Color="{StaticResource Color800}" />
     <SolidColorBrush x:Key="Brush900" Color="{StaticResource Color900}" />
     <SolidColorBrush x:Key="Brush950" Color="{StaticResource Color950}" />
+    <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource ColorAccent}" />
+    <SolidColorBrush x:Key="AccentHoverBrush" Color="{StaticResource ColorAccentHover}" />
+    <SolidColorBrush x:Key="AccentPressedBrush" Color="{StaticResource ColorAccentPressed}" />
+    <SolidColorBrush x:Key="AccentDimBrush" Color="{StaticResource ColorAccentDim}" />
 
     <SolidColorBrush x:Key="White" Color="White" />
     <SolidColorBrush x:Key="Black" Color="Black" />
 
-    <SolidColorBrush x:Key="GroupBoxBorder" Color="{StaticResource Color300}" />
+    <SolidColorBrush x:Key="GroupBoxBorder" Color="{StaticResource ColorAccentDim}" />
 </ResourceDictionary>

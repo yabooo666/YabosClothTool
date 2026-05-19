@@ -5,7 +5,11 @@
 	  <UseWPF>true</UseWPF>
 	  <UseWindowsForms>true</UseWindowsForms>
 	  <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-	  <ApplicationIcon>Resources\grzyClothToolIcon.ico</ApplicationIcon>
+	  <AssemblyName>YabosClothTool</AssemblyName>
+	  <RootNamespace>grzyClothTool</RootNamespace>
+	  <Product>YabosClothTool</Product>
+	  <Description>YabosClothTool</Description>
+	  <ApplicationIcon>Resources\YabosClothToolIcon.ico</ApplicationIcon>
 	  <FileVersion>1.2.1</FileVersion>
 	  
 	  <SelfContained>true</SelfContained>
@@ -21,8 +25,8 @@
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
   <ItemGroup>
-    <Resource Include="Resources\grzyClothTool.png" />
-    <Resource Include="Resources\grzyClothToolIcon.ico" />
+    <Resource Include="Resources\YabosClothTool.png" />
+    <Resource Include="Resources\YabosClothToolIcon.ico" />
     <Resource Include="Resources\reservedDrawable.ydd" />
     <Resource Include="Resources\reservedTexture.ytd" />
   </ItemGroup>

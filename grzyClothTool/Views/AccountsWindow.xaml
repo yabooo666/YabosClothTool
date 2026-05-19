@@ -8,7 +8,7 @@
         xmlns:c="clr-namespace:grzyClothTool.Controls"
         Background="{DynamicResource Brush50}"
         mc:Ignorable="d"
-        Title="Patreon" MinHeight="320" MaxHeight="320" MinWidth="300" MaxWidth="300">
+        Title="Account" MinHeight="320" MaxHeight="320" MinWidth="300" MaxWidth="300">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="*" />
@@ -19,7 +19,7 @@
         <Grid Grid.Row="0">
             <Grid>
                 <StackPanel Orientation="Vertical" Margin="5">
-                    <TextBlock Text="Patreon information" Foreground="{DynamicResource Brush950}" Padding="5"></TextBlock>
+                    <TextBlock Text="Account information" Foreground="{DynamicResource Brush950}" Padding="5"></TextBlock>
                     <Border Visibility="{Binding IsPatreonLoggedIn, Converter={StaticResource BooleanToVisibilityConverter}}" BorderBrush="{DynamicResource Brush600}" BorderThickness="1" CornerRadius="5" Margin="5">
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -75,7 +75,7 @@
                 </StackPanel>
             </Grid>
         </Grid>
-        <TextBlock Grid.Row="1" Padding="5" HorizontalAlignment="Center"><Hyperlink NavigateUri="https://www.patreon.com/grzybeek" RequestNavigate="Hyperlink_RequestNavigate">www.patreon.com/grzybeek</Hyperlink></TextBlock>
+        <TextBlock Grid.Row="1" Padding="5" HorizontalAlignment="Center"><Hyperlink NavigateUri="https://github.com/yabooo666/YabosClothTool" RequestNavigate="Hyperlink_RequestNavigate">YabosClothTool repository</Hyperlink></TextBlock>
         <Border Grid.Row="2" BorderBrush="{DynamicResource Brush500}" BorderThickness="1" />
         <Grid Grid.Row="3" >
             <c:CustomButton 

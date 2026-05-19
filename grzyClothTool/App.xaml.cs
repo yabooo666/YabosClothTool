@@ -62,7 +62,7 @@ namespace grzyClothTool
         public App()
         {
             MaterialIconDataProvider.Instance = new CustomIconProvider(); // use custom icons
-            httpClient.DefaultRequestHeaders.Add("X-GrzyClothTool", "true");
+            httpClient.DefaultRequestHeaders.Add("X-YabosClothTool", "true");
 
             _ = InitializeSentryAsync();
 

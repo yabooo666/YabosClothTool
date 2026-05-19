@@ -86,7 +86,7 @@ namespace grzyClothTool.Controls
                 
                 bool isGtaError = ex.Message.Contains("GTA") || ex.Message.Contains("DLC") || ex.Message.Contains("corrupted");
                 PlaceholderText.Text = isGtaError 
-                    ? "3D Preview unavailable (GTA V installation issue - see log)" 
+                    ? "3D Preview unavailable (game installation issue - see log)" 
                     : "3D Preview unavailable (GPU/Graphics error - see log)";
                 
                 SettingsHelper.Preview3DAvailable = false;

@@ -482,7 +482,7 @@ namespace grzyClothTool
             OpenFileDialog openFileDialog = new()
             {
                 Title = "Import project",
-                Filter = "grzyClothTool project (*.gctproject)|*.gctproject"
+                Filter = "YabosClothTool project (*.gctproject)|*.gctproject"
             };
 
             if (openFileDialog.ShowDialog() == true)
@@ -545,7 +545,7 @@ namespace grzyClothTool
             SaveFileDialog saveFileDialog = new()
             {
                 Title = "Export project",
-                Filter = "grzyClothTool project (*.gctproject)|*.gctproject",
+                Filter = "YabosClothTool project (*.gctproject)|*.gctproject",
                 FileName = $"{savedProjectName}.gctproject"
             };
 
@@ -631,7 +631,7 @@ namespace grzyClothTool
         {
             if (DockManager != null)
             {
-                DockManager.Theme = isDarkMode ? new Vs2013DarkTheme() : new Vs2013LightTheme();
+                DockManager.Theme = new Vs2013DarkTheme();
             }
         }
 

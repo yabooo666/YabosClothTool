@@ -266,7 +266,7 @@ namespace grzyClothTool.Views
         {
             if (sender is ModernLabelRadioButton radioButton && radioButton.IsChecked == true)
             {
-                _resourceType = radioButton.Label switch
+                _resourceType = radioButton.Tag?.ToString() switch
                 {
                     "FiveM" => BuildResourceType.FiveM,
                     "AltV" => BuildResourceType.AltV,

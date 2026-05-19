@@ -63,9 +63,9 @@ namespace grzyClothTool.Properties {
         /// <summary>
         ///   Looks up a localized resource of type System.Drawing.Bitmap.
         /// </summary>
-        internal static System.Drawing.Bitmap grzyClothTool {
+        internal static System.Drawing.Bitmap YabosClothTool {
             get {
-                object obj = ResourceManager.GetObject("grzyClothTool", resourceCulture);
+                object obj = ResourceManager.GetObject("YabosClothTool", resourceCulture);
                 return ((System.Drawing.Bitmap)(obj));
             }
         }
@@ -73,9 +73,9 @@ namespace grzyClothTool.Properties {
         /// <summary>
         ///   Looks up a localized resource of type System.Drawing.Icon similar to (Icon).
         /// </summary>
-        internal static System.Drawing.Icon grzyClothToolIcon {
+        internal static System.Drawing.Icon YabosClothToolIcon {
             get {
-                object obj = ResourceManager.GetObject("grzyClothToolIcon", resourceCulture);
+                object obj = ResourceManager.GetObject("YabosClothToolIcon", resourceCulture);
                 return ((System.Drawing.Icon)(obj));
             }
         }

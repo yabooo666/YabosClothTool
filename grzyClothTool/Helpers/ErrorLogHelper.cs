@@ -6,7 +6,7 @@ namespace grzyClothTool.Helpers;
 
 public static class ErrorLogHelper
 {
-    private static readonly string LogFileName = "grzyClothTool_errors.log";
+    private static readonly string LogFileName = "YabosClothTool_errors.log";
     private static readonly object _lockObject = new();
 
     public static void LogError(string message, Exception ex = null)

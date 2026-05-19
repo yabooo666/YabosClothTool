@@ -19,7 +19,7 @@ namespace grzyClothTool.Views
             InitializeComponent();
             
             string documentsPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-            string defaultFolder = Path.Combine(documentsPath, "grzyClothTool Projects");
+            string defaultFolder = Path.Combine(documentsPath, "YabosClothTool Projects");
             FolderPathTextBox.Text = defaultFolder;
             ContinueButton.IsEnabled = true;
 
@@ -92,7 +92,7 @@ namespace grzyClothTool.Views
                     Directory.CreateDirectory(selectedPath);
                 }
 
-                string testFile = Path.Combine(selectedPath, ".grzyClothTool_test");
+                string testFile = Path.Combine(selectedPath, ".YabosClothTool_test");
                 File.WriteAllText(testFile, "test");
                 File.Delete(testFile);
 

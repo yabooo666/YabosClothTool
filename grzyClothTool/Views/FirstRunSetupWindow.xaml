@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:icons="clr-namespace:Material.Icons.WPF;assembly=Material.Icons.WPF"
         mc:Ignorable="d"
-        Title="Welcome to grzyClothTool - First Time Setup"
+        Title="Welcome to YabosClothTool - First Time Setup"
         Height="350" Width="600"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
@@ -20,7 +20,7 @@
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0" Margin="0,0,0,20">
-            <TextBlock Text="Welcome to grzyClothTool!"
+            <TextBlock Text="Welcome to YabosClothTool!"
                        FontSize="24"
                        FontWeight="Bold"
                        Foreground="{DynamicResource Brush950}"
@@ -46,7 +46,7 @@
                 <Run Text="Choose a MAIN folder where ALL self-contained projects will be stored."/>
                 <LineBreak/>
                 <Run Text="Example: " FontWeight="SemiBold"/>
-                <Run Text="C:\grzyClothTool Projects"/>
+                <Run Text="C:\YabosClothTool Projects"/>
             </TextBlock>
             
             <TextBlock Text="(Do NOT select a specific project folder - select the parent folder that will contain multiple projects)"
@@ -89,7 +89,7 @@
             <TextBlock x:Name="ValidationMessage"
                        Text=""
                        FontSize="11"
-                       Foreground="Red"
+                       Foreground="{DynamicResource AccentBrush}"
                        Margin="0,5,0,0"
                        TextWrapping="Wrap"
                        Visibility="Collapsed"/>

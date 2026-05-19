@@ -14,7 +14,7 @@
         Width="420"
         Background="Transparent"
         >
-    <Border Background="{DynamicResource Brush700}" CornerRadius="50" BorderThickness="2" BorderBrush="{DynamicResource Brush100}">
+    <Border Background="{DynamicResource Brush50}" CornerRadius="28" BorderThickness="2" BorderBrush="{DynamicResource AccentBrush}">
         <Grid>
             <Grid.RowDefinitions >
                 <RowDefinition Height="*" />
@@ -22,12 +22,12 @@
             </Grid.RowDefinitions>
 
             <StackPanel Grid.Row="0">
-                <TextBlock x:Name="x" Padding="5" HorizontalAlignment="Center" FontSize="42" FontWeight="SemiBold" VerticalAlignment="Bottom" Foreground="{DynamicResource Brush100}" Text="grzyClothTool" />
-                <Image Width="350" Source="pack://application:,,,/grzyClothTool;component/Resources/grzyClothTool.png" />
+                <TextBlock x:Name="x" Padding="5" HorizontalAlignment="Center" FontSize="42" FontWeight="SemiBold" VerticalAlignment="Bottom" Foreground="{DynamicResource Brush950}" Text="YabosClothTool" />
+                <Image Width="270" Source="pack://application:,,,/Resources/YabosClothTool.png" />
             </StackPanel>
             <StackPanel Grid.Row="1" >
-                <TextBlock x:Name="updateTextBox" Padding="5" HorizontalAlignment="Center" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Bottom" Foreground="{DynamicResource Brush100}" Text="Loading..." />
-                <ProgressBar Background="{DynamicResource Brush900}" Foreground="{DynamicResource Brush100}" BorderThickness="0" x:Name="progressBar" HorizontalAlignment="Center" VerticalAlignment="Center" Width="300" Height="15" IsIndeterminate="True">
+                <TextBlock x:Name="updateTextBox" Padding="5" HorizontalAlignment="Center" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Bottom" Foreground="{DynamicResource Brush800}" Text="Loading..." />
+                <ProgressBar Background="{DynamicResource Brush150}" Foreground="{DynamicResource AccentBrush}" BorderThickness="0" x:Name="progressBar" HorizontalAlignment="Center" VerticalAlignment="Center" Width="300" Height="15" IsIndeterminate="True">
                     <ProgressBar.Clip>
                         <RectangleGeometry RadiusX="5" RadiusY="5" Rect="0,0,300,10"/>
                     </ProgressBar.Clip>

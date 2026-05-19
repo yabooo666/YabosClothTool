@@ -89,7 +89,7 @@ namespace grzyClothTool.Views
             "You can click SHIFT + DEL to instantly delete a selected drawable, without popup.",
             "You can click CTRL + DEL to instantly replace a selected drawable with reserved drawable.",
             "You can reserve your drawables and later change it to real model.",
-            "Supporting me with monthly patreon will speed up the development of the tool!",
+            "Keeping texture names consistent makes project maintenance easier.",
             "You can hover over warning icon to see what is wrong with your drawable or texture.",
         ];
 
@@ -103,15 +103,15 @@ namespace grzyClothTool.Views
             OtherTools = [
                 new ToolInfo
                 {
-                    Name = "grzyOptimizer",
-                    Description = "Optimize YDD models, reduce polygon and vertex count while maintaining visual quality.",
-                    Url = GlobalConstants.GRZY_TOOLS_URL
+                    Name = "YabosClothTool",
+                    Description = "Open the project repository for releases, source, and issue tracking.",
+                    Url = "https://github.com/yabooo666/YabosClothTool"
                 },
                 new ToolInfo
                 {
-                    Name = "grzyTattooTool",
-                    Description = "Create and edit tattoos with preview and quick addon resource generation for FiveM.",
-                    Url = GlobalConstants.GRZY_TOOLS_URL
+                    Name = "grzyClothTool (original app)",
+                    Description = "Open the original upstream project repository.",
+                    Url = "https://github.com/grzybeek/grzyClothTool"
                 }
             ];
 
@@ -135,14 +135,7 @@ namespace grzyClothTool.Views
 
         private async void Home_Loaded(object sender, RoutedEventArgs e)
         {
-            try
-            {
-                await FetchPatreons();
-            } 
-            catch
-            {
-                PatreonList = ["Failed to fetch patreons"];
-            }
+            PatreonList = ["YabosClothTool"];
 
             try
             {
@@ -169,10 +162,10 @@ namespace grzyClothTool.Views
 
         private async Task FetchLatestRelease()
         {
-            var url = "https://api.github.com/repos/grzybeek/grzyClothTool/releases/latest";
+            var url = "https://api.github.com/repos/yabooo666/YabosClothTool/releases/latest";
 
             App.httpClient.DefaultRequestHeaders.UserAgent.Clear();
-            App.httpClient.DefaultRequestHeaders.Add("User-Agent", "grzyClothTool");
+            App.httpClient.DefaultRequestHeaders.Add("User-Agent", "YabosClothTool");
 
             var response = await App.httpClient.GetAsync(url).ConfigureAwait(false);
             if (response.IsSuccessStatusCode)
@@ -247,7 +240,7 @@ namespace grzyClothTool.Views
             {
                 Process.Start(new ProcessStartInfo
                 {
-                    FileName = "https://github.com/grzybeek/grzyClothTool/releases",
+                    FileName = "https://github.com/yabooo666/YabosClothTool/releases",
                     UseShellExecute = true
                 });
             }

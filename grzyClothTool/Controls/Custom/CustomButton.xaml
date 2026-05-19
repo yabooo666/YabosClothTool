@@ -11,12 +11,15 @@
     <UserControl.Resources>
         <Style TargetType="Button" x:Key="RoundedButton">
             <Setter Property="TextBlock.TextAlignment" Value="Center" />
-            <Setter Property="Background" Value="{DynamicResource Brush200}" />
+            <Setter Property="Background" Value="{DynamicResource Brush150}" />
             <Setter Property="Foreground" Value="{DynamicResource Brush950}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentDimBrush}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="{x:Type Button}">
-                        <Border Background="{TemplateBinding Background}">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                     </ControlTemplate>
@@ -29,7 +32,12 @@
             </Style.Resources>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="{DynamicResource Brush300}" />
+                    <Setter Property="Background" Value="{DynamicResource AccentDimBrush}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource AccentPressedBrush}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource AccentHoverBrush}" />
                 </Trigger>
                 <Trigger Property="IsEnabled" Value="False">
                     <Trigger.Setters>
@@ -42,12 +50,15 @@
         <Style x:Key="ToggleButtonVisibility" TargetType="ToggleButton">
             <Setter Property="Visibility" Value="Hidden" />
             <Setter Property="TextBlock.TextAlignment" Value="Center" />
-            <Setter Property="Background" Value="{DynamicResource Brush200}" />
+            <Setter Property="Background" Value="{DynamicResource Brush150}" />
             <Setter Property="Foreground" Value="{DynamicResource Brush950}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentDimBrush}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="{x:Type ToggleButton}">
-                        <Border Background="{TemplateBinding Background}">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                     </ControlTemplate>
@@ -58,7 +69,8 @@
                     <Setter Property="Visibility" Value="Visible" />
                 </DataTrigger>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="{DynamicResource Brush300}" />
+                    <Setter Property="Background" Value="{DynamicResource AccentDimBrush}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
                 </Trigger>
             </Style.Triggers>
             <Style.Resources>
@@ -103,7 +115,7 @@
         </ToggleButton>
 
         <Popup Width="{Binding ActualWidth, ElementName=btn}" PlacementTarget="{Binding ElementName=btn}" Placement="Bottom" StaysOpen="False" IsOpen="{Binding IsChecked, ElementName=DropdownToggle}" AllowsTransparency="True">
-            <Border CornerRadius="{Binding CornerRadius, ElementName=MyCustomButton}" Background="{DynamicResource Brush400}" Padding="1" BorderThickness="1">
+            <Border CornerRadius="{Binding CornerRadius, ElementName=MyCustomButton}" Background="{DynamicResource AccentBrush}" Padding="1" BorderThickness="1">
                 <ContentPresenter x:Name="DropdownContentPresenter" Content="{Binding Content, ElementName=MyCustomButton}" />
             </Border>
         </Popup>
