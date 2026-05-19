@@ -1,5 +1,7 @@
 # YabosClothTool
 
+[![Watch the video](https://img.youtube.com/vi/sKSxduZiPkg/mqdefault.jpg)](https://www.youtube.com/watch?v=sKSxduZiPkg)
+
 YabosClothTool is a fork of [grzyClothTool](https://github.com/grzybeek/grzyClothTool)
 
 ## About
@@ -32,7 +34,5 @@ This project remains licensed under the GNU General Public License v3.0.
 
 See [LICENSE](./LICENSE) for details.
 
-## Simple "tutrial"
-https://youtu.be/sKSxduZiPkg
 
 
