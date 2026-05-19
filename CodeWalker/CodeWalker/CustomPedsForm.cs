@@ -715,7 +715,9 @@ namespace CodeWalker
             camera.FollowEntity.Position = bounds.Center;
             camera.TargetDistance = distance;
             camera.CurrentDistance = distance;
-            camera.TargetRotation = camera.CurrentRotation;
+            var exportRotation = new Vector3((float)Math.PI, 0.2f, 0.0f);
+            camera.TargetRotation = exportRotation;
+            camera.CurrentRotation = exportRotation;
             camera.UpdateProj = true;
             camera.Update(0.0f);
         }
