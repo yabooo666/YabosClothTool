@@ -67,6 +67,7 @@ namespace grzyClothTool.Controls
                     FormBorderStyle = FormBorderStyle.None,
                     Dock = DockStyle.Fill
                 };
+                _customPedsForm.BatchExportRequested += RefreshBatchExportCache;
 
                 PreviewHost.Child = _customPedsForm;
                 _customPedsForm.Show();
@@ -107,6 +108,7 @@ namespace grzyClothTool.Controls
                     FormBorderStyle = FormBorderStyle.None,
                     Dock = DockStyle.Fill
                 };
+                _customPedsForm.BatchExportRequested += RefreshBatchExportCache;
 
                 PreviewHost.Child = _customPedsForm;
                 _customPedsForm.Show();
@@ -131,6 +133,7 @@ namespace grzyClothTool.Controls
             {
                 try
                 {
+                    _customPedsForm.BatchExportRequested -= RefreshBatchExportCache;
                     _customPedsForm = null;
                     _isInitialized = false;
                     Environment.Exit(0);
@@ -168,8 +171,6 @@ namespace grzyClothTool.Controls
                 {
                     return;
                 }
-
-                RefreshBatchExportCache();
 
                 var selectedNames = selectedDrawables.Select(d => d.Name).ToHashSet();
                 var removedDrawables = _customPedsForm.LoadedDrawables.Keys.Where(name => !selectedNames.Contains(name)).ToList();
@@ -296,6 +297,7 @@ namespace grzyClothTool.Controls
             {
                 if (_customPedsForm != null && !_customPedsForm.IsDisposed)
                 {
+                    _customPedsForm.BatchExportRequested -= RefreshBatchExportCache;
                     _customPedsForm.Dispose();
                 }
                 _customPedsForm = null;
